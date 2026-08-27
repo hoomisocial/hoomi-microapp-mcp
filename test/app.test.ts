@@ -120,6 +120,57 @@ test("handles a stateless MCP initialize request", async () => {
   }
 });
 
+test("registers all micro-app and builder tools from the developer platform catalog", async () => {
+  const expectedTools = [
+    "hoomi_add_app_member",
+    "hoomi_remove_app_member",
+    "hoomi_update_app_member_role",
+    "hoomi_create_micro_app_build",
+    "hoomi_create_build_submission",
+    "hoomi_get_micro_app_build",
+    "hoomi_delete_micro_app_build",
+    "hoomi_get_build_submissions",
+    "hoomi_mark_build_ready_to_release",
+    "hoomi_submit_build_for_review",
+    "hoomi_update_micro_app_build",
+    "hoomi_create_micro_app",
+    "hoomi_update_micro_app",
+    "hoomi_delete_micro_app",
+    "hoomi_get_micro_app",
+    "hoomi_list_my_apps",
+    "hoomi_list_partner_apps",
+    "hoomi_refresh_app_secret"
+  ];
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  try {
+    const token = await createToken();
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} })
+    });
+
+    assert.equal(response.status, 200);
+    const body = parseMcpResponse(await response.text());
+    const result = body.result as { tools: Array<{ name: string }> };
+    const registeredTools = new Set(result.tools.map((tool) => tool.name));
+    for (const tool of expectedTools) {
+      assert.equal(registeredTools.has(tool), true, `missing registered tool: ${tool}`);
+    }
+  } finally {
+    await close(server);
+    await store.close();
+  }
+});
+
 test("executes a read-only tool without exposing sensitive upstream profile fields", async () => {
   let authorizationHeader: string | undefined;
   const upstream = createServer((request, response) => {
