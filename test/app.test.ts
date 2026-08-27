@@ -187,6 +187,107 @@ test("executes a read-only tool without exposing sensitive upstream profile fiel
   }
 });
 
+test("creates a micro-app and delivers its secret only through the one-time handoff", async () => {
+  let requestedContentType: string | undefined;
+  let requestedBody = "";
+  const upstream = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      requestedContentType = request.headers["content-type"];
+      requestedBody = Buffer.concat(chunks).toString("utf8");
+      response.statusCode = 201;
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          success: true,
+          data: {
+            id: 1000000001,
+            partner_id: 1,
+            app_secret: "one-time-app-secret",
+            app_secret_expiry: "2026-09-26T00:00:00.000Z",
+            app_type: "HTML5",
+            app_bundle: "com.hoomi.demo",
+            app_default_language: "en-us",
+            app_category_id: 4,
+            app_age_ratings_id: 1,
+            app_name: "Hoomi Demo"
+          }
+        })
+      );
+    });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const upstreamAddress = upstream.address();
+  assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
+
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(
+    createApp({ ...config, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` }, store)
+  );
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  try {
+    const token = await createToken();
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "hoomi_create_micro_app",
+          arguments: {
+            entity_id: 1,
+            app_type: "HTML5",
+            app_name: "Hoomi Demo",
+            app_bundle: "com.hoomi.demo",
+            app_default_language: "en-us",
+            app_category_id: 4,
+            app_age_ratings_id: 1,
+            app_allowed_countries: ["ID"],
+            confirm: true
+          }
+        }
+      })
+    });
+
+    assert.equal(response.status, 200);
+    const body = parseMcpResponse(await response.text());
+    const result = body.result as { content: Array<{ text: string }> };
+    const created = JSON.parse(result.content[0].text) as {
+      app: { id: number };
+      secret_handoff: { reference: string; expires_at: string };
+    };
+    assert.equal(created.app.id, 1000000001);
+    assert.match(created.secret_handoff.reference, /^[a-f0-9]{64}$/);
+    assert.equal(result.content[0].text.includes("one-time-app-secret"), false);
+    assert.match(requestedContentType ?? "", /^multipart\/form-data; boundary=/);
+    assert.match(requestedBody, /name="app_name"/);
+    assert.match(requestedBody, /Hoomi Demo/);
+
+    const handoffResponse = await fetch(
+      `http://127.0.0.1:${address.port}/v1/secret-handoffs/${created.secret_handoff.reference}/consume`,
+      { method: "POST", headers: { authorization: `Bearer ${token}` } }
+    );
+    assert.deepEqual(await handoffResponse.json(), {
+      app_id: 1000000001,
+      app_secret: "one-time-app-secret",
+      expires_at: created.secret_handoff.expires_at
+    });
+  } finally {
+    await close(server);
+    await close(upstream);
+    await store.close();
+  }
+});
+
 test("consumes an app secret handoff exactly once for its owning user", async () => {
   const store = new MemorySecretHandoffStore();
   const handoff = await store.create(42, 1000000001, "one-time-app-secret", 60);

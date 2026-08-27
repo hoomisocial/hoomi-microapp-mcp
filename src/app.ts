@@ -83,7 +83,7 @@ async function handleMcpRequest(req: Request, res: Response, next: NextFunction)
     return;
   }
 
-  const mcpServer = createMcpServer(principal, req.app.locals.config);
+  const mcpServer = createMcpServer(principal, req.app.locals.config, req.app.locals.secretHandoffStore);
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   try {
@@ -161,6 +161,7 @@ function errorHandler(error: unknown, req: Request, res: Response, _next: NextFu
 export function createApp(config: AppConfig, secretHandoffStore: SecretHandoffStore): Express {
   const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
   app.locals.config = config;
+  app.locals.secretHandoffStore = secretHandoffStore;
 
   app.disable("x-powered-by");
   app.set("trust proxy", false);
@@ -177,7 +178,7 @@ export function createApp(config: AppConfig, secretHandoffStore: SecretHandoffSt
 
   app.use(config.mcpPath, originPolicy(config));
   app.use(config.mcpPath, authenticationMiddleware(config));
-  app.use(express.json({ limit: "1mb", type: ["application/json", "application/*+json"] }));
+  app.use(express.json({ limit: "8mb", type: ["application/json", "application/*+json"] }));
   app.post(config.mcpPath, (req, res, next) => {
     void handleMcpRequest(req, res, next);
   });

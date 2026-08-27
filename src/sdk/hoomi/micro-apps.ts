@@ -1,6 +1,26 @@
 import { HoomiApiClient, requireHoomiClient } from "./client.js";
-import type { ApiEnvelope, MicroAppSummary } from "./types.js";
+import { appendFile, appendRepeated, appendText } from "./form-data.js";
+import type { HoomiFormField } from "./client.js";
+import type { ApiEnvelope, HoomiFile, MicroApp, MicroAppSummary } from "./types.js";
 import { unwrap } from "./types.js";
+
+export interface CreateMicroAppInput {
+  appType: string;
+  appName: string;
+  appBundle: string;
+  appDefaultLanguage: string;
+  appCategoryId: number;
+  appAgeRatingsId: number;
+  appDescription?: string;
+  appTagline?: string;
+  appPrivacyUrl?: string;
+  appTncUrl?: string;
+  marketingUrl?: string;
+  appAllowedCountries?: string[];
+  csPhone?: string;
+  csEmail?: string;
+  appLogo?: HoomiFile;
+}
 
 export class MicroAppsSdk {
   constructor(private readonly client: HoomiApiClient | undefined) {}
@@ -38,5 +58,30 @@ export class MicroAppsSdk {
       `/v2/partners/entity/${entityId}/apps`
     );
     return unwrap<MicroAppSummary[]>(response) ?? [];
+  }
+
+  async create(entityId: number, input: CreateMicroAppInput): Promise<MicroApp> {
+    const fields: HoomiFormField[] = [];
+    appendText(fields, "app_type", input.appType);
+    appendText(fields, "app_name", input.appName);
+    appendText(fields, "app_bundle", input.appBundle);
+    appendText(fields, "app_default_language", input.appDefaultLanguage);
+    appendText(fields, "app_category_id", String(input.appCategoryId));
+    appendText(fields, "app_age_ratings_id", String(input.appAgeRatingsId));
+    appendText(fields, "app_description", input.appDescription);
+    appendText(fields, "app_tagline", input.appTagline);
+    appendText(fields, "app_privacy_url", input.appPrivacyUrl);
+    appendText(fields, "app_tnc_url", input.appTncUrl);
+    appendText(fields, "marketing_url", input.marketingUrl);
+    appendRepeated(fields, "app_allowed_countries", input.appAllowedCountries);
+    appendText(fields, "cs_phone", input.csPhone);
+    appendText(fields, "cs_email", input.csEmail);
+    appendFile(fields, "app_logo", input.appLogo);
+
+    const response = await requireHoomiClient(this.client).postForm<ApiEnvelope<MicroApp>>(
+      `/v2/partners/entity/${entityId}/apps`,
+      fields
+    );
+    return unwrap<MicroApp>(response);
   }
 }
