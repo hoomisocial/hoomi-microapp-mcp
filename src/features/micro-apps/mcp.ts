@@ -101,6 +101,26 @@ export function registerMicroAppTools(
   );
 
   server.registerTool(
+    "hoomi_list_my_apps",
+    {
+      title: "List my micro-apps",
+      description: "List micro-apps explicitly granted to the authenticated user in a partner workspace.",
+      inputSchema: z.object({
+        partner_id: z.number().int().positive().describe("Hoomi partner workspace ID.")
+      })
+    },
+    async ({ partner_id }) => {
+      try {
+        return {
+          content: [{ type: "text" as const, text: serialize(await sdk.microApps.listMyApps(partner_id), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
     "hoomi_create_micro_app",
     {
       title: "Create a micro-app",

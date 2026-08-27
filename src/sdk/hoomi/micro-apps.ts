@@ -80,6 +80,13 @@ export class MicroAppsSdk {
     return unwrap<MicroAppSummary[]>(response) ?? [];
   }
 
+  async listMyApps(partnerId: number): Promise<MicroAppSummary[]> {
+    const response = await requireHoomiClient(this.client).get<ApiEnvelope<MicroAppSummary[]>>("/v2/micro-apps", {
+      partner_id: partnerId
+    });
+    return unwrap<MicroAppSummary[]>(response) ?? [];
+  }
+
   async create(entityId: number, input: CreateMicroAppInput): Promise<MicroApp> {
     const fields: HoomiFormField[] = [];
     appendText(fields, "app_type", input.appType);
