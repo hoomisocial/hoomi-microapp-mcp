@@ -68,3 +68,41 @@ test("gets a micro-app build through the developer platform route", async () => 
     "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1"
   );
 });
+
+test("updates a micro-app build as multipart form data", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedInit: RequestInit | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedInit = init;
+        return new Response(JSON.stringify({ success: true, data: { id: 1, app_version: "1.0.1" } }), {
+          status: 200
+        });
+      }
+    })
+  );
+
+  const build = await sdk.update(1, 1000000000, 1, {
+    appLang: "en-us",
+    appVersion: "1.0.1",
+    appUrl: "https://cdn.hoomi.social/apps/demo/1.0.1/index.html",
+    appDomains: ["demo.example.com"]
+  });
+
+  assert.deepEqual(build, { id: 1, app_version: "1.0.1" });
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1"
+  );
+  assert.equal(requestedInit?.method, "PUT");
+  const form = requestedInit?.body as FormData;
+  assert.equal(form.get("app_version"), "1.0.1");
+  assert.equal(form.get("app_domains"), "demo.example.com");
+  assert.equal(form.get("app_previews"), null);
+});

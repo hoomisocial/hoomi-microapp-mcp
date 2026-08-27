@@ -107,6 +107,51 @@ export function registerBuildTools(server: McpServer, sdk: HoomiSdk, maxToolOutp
     }
   );
 
+  server.registerTool(
+    "hoomi_update_micro_app_build",
+    {
+      title: "Update a micro-app build",
+      description:
+        "Update a Hoomi micro-app build. Existing preview images are retained because this endpoint does not upload previews; demo passwords are intentionally not accepted by the MCP tool.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        build_id: z.number().int().positive().describe("Hoomi micro-app build ID."),
+        app_lang: z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/),
+        app_version: z.string().trim().min(1).max(80),
+        app_url: httpsUrl,
+        app_callback_url: httpsUrl.optional(),
+        app_permissions: z.array(z.number().int().positive()).max(50).default([]),
+        app_domains: z.array(z.string().trim().min(1).max(253)).max(50).default([]),
+        app_ip_whitelist: z
+          .array(z.string().trim().max(253).refine((value) => isIP(value) !== 0, "Value must be an IP address"))
+          .max(50)
+          .default([]),
+        app_demo_email: z.string().trim().email().max(320).optional(),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this update.")
+      }),
+      annotations: writeAnnotations
+    },
+    async ({ entity_id, app_id, build_id, app_lang, app_version, app_url, app_callback_url, app_permissions,
+      app_domains, app_ip_whitelist, app_demo_email }) => {
+      try {
+        const build = await sdk.builds.update(entity_id, app_id, build_id, {
+          appLang: app_lang,
+          appVersion: app_version,
+          appUrl: app_url,
+          appCallbackUrl: app_callback_url,
+          appPermissions: app_permissions,
+          appDomains: app_domains,
+          appIpWhitelist: app_ip_whitelist,
+          appDemoEmail: app_demo_email
+        });
+        return { content: [{ type: "text" as const, text: serialize(sanitizeBuild(build), maxToolOutputBytes) }] };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
   const buildActionTools = [
     ["hoomi_submit_build_for_review", "Submit a Hoomi micro-app build for review.", "submitForReview"],
     ["hoomi_mark_build_ready_to_release", "Mark a Hoomi micro-app build ready to release.", "markReadyToRelease"]
