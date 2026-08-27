@@ -152,6 +152,45 @@ export function registerBuildTools(server: McpServer, sdk: HoomiSdk, maxToolOutp
     }
   );
 
+  server.registerTool(
+    "hoomi_delete_micro_app_build",
+    {
+      title: "Delete a micro-app build",
+      description:
+        "Soft-delete a Hoomi micro-app build. This is destructive and requires explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        build_id: z.number().int().positive().describe("Hoomi micro-app build ID."),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this deletion.")
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ entity_id, app_id, build_id }) => {
+      try {
+        const response = await sdk.builds.delete(entity_id, app_id, build_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serialize(
+                { deleted: true, entity_id, app_id, build_id, message: response.message ?? "Micro app build deleted" },
+                maxToolOutputBytes
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
   const buildActionTools = [
     ["hoomi_submit_build_for_review", "Submit a Hoomi micro-app build for review.", "submitForReview"],
     ["hoomi_mark_build_ready_to_release", "Mark a Hoomi micro-app build ready to release.", "markReadyToRelease"]

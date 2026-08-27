@@ -76,4 +76,10 @@ export class BuildsSdk {
     );
     return unwrap<Build>(response);
   }
+
+  async delete(entityId: number, appId: number, buildId: number): Promise<ApiEnvelope<unknown>> {
+    return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}`
+    );
+  }
 }
