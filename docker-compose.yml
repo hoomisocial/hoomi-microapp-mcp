@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   hoomi-mcp:
     build:
       context: .
@@ -9,6 +23,9 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 8300
+    depends_on:
+      redis:
+        condition: service_healthy
     ports:
       - "8300:8300"
     read_only: true
@@ -33,3 +50,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  redis-data:
