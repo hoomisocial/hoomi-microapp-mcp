@@ -73,7 +73,7 @@ export class MicroAppsSdk {
     return unwrap(response);
   }
 
-  async listWorkspaceApps(entityId: number): Promise<MicroAppSummary[]> {
+  async listPartnerApps(entityId: number): Promise<MicroAppSummary[]> {
     const response = await requireHoomiClient(this.client).get<ApiEnvelope<MicroAppSummary[]>>(
       `/v2/partners/entity/${entityId}/apps`
     );

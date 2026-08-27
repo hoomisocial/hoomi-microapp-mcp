@@ -115,3 +115,24 @@ test("lists the authenticated user's micro-app grants for a partner", async () =
   assert.deepEqual(apps, [{ id: 1000000000 }]);
   assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/micro-apps?partner_id=1");
 });
+
+test("lists partner apps through the partner workspace route", async () => {
+  let requestedUrl: URL | undefined;
+  const sdk = new MicroAppsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input) => {
+        requestedUrl = new URL(input.toString());
+        return new Response(JSON.stringify({ success: true, data: [{ app_id: 1000000000 }] }), { status: 200 });
+      }
+    })
+  );
+
+  const apps = await sdk.listPartnerApps(1);
+
+  assert.deepEqual(apps, [{ app_id: 1000000000 }]);
+  assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/partners/entity/1/apps");
+});

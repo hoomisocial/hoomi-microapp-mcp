@@ -77,7 +77,7 @@ export function registerMicroAppTools(
   );
 
   server.registerTool(
-    "hoomi_list_workspace_apps",
+    "hoomi_list_partner_apps",
     {
       description: "List micro-apps in a Hoomi partner workspace where the authenticated user is a member.",
       inputSchema: z.object({
@@ -90,7 +90,7 @@ export function registerMicroAppTools(
           content: [
             {
               type: "text" as const,
-              text: serialize(await sdk.microApps.listWorkspaceApps(entity_id), maxToolOutputBytes)
+              text: serialize(await sdk.microApps.listPartnerApps(entity_id), maxToolOutputBytes)
             }
           ]
         };
