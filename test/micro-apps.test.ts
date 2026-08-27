@@ -47,3 +47,26 @@ test("updates a micro-app with repeated localized fields and language-specific l
   assert.deepEqual(form.getAll("app_name"), ["Dompet Hoomi", "Hoomi Wallet"]);
   assert.equal(form.get("app_logo_en-us") instanceof Blob, true);
 });
+
+test("gets a micro-app through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  const sdk = new MicroAppsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input) => {
+        requestedUrl = new URL(input.toString());
+        return new Response(JSON.stringify({ success: true, data: { micro_apps: { id: 1000000000 } } }), {
+          status: 200
+        });
+      }
+    })
+  );
+
+  const detail = await sdk.get(1, 1000000000);
+
+  assert.deepEqual(detail, { micro_apps: { id: 1000000000 } });
+  assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000");
+});

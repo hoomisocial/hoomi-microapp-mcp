@@ -1,7 +1,7 @@
 import { HoomiApiClient, requireHoomiClient } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
-import type { ApiEnvelope, HoomiFile, MicroApp, MicroAppSummary } from "./types.js";
+import type { ApiEnvelope, HoomiFile, MicroApp, MicroAppDetail, MicroAppSummary } from "./types.js";
 import { unwrap } from "./types.js";
 
 export interface CreateMicroAppInput {
@@ -132,5 +132,12 @@ export class MicroAppsSdk {
       fields
     );
     return unwrap<MicroApp>(response);
+  }
+
+  async get(entityId: number, appId: number): Promise<MicroAppDetail> {
+    const response = await requireHoomiClient(this.client).get<ApiEnvelope<MicroAppDetail>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}`
+    );
+    return unwrap<MicroAppDetail>(response);
   }
 }

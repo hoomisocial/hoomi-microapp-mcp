@@ -6,7 +6,7 @@ import { HoomiSdk } from "../../sdk/hoomi/index.js";
 import { HoomiApiError } from "../../sdk/hoomi/client.js";
 import type { AuthenticatedPrincipal } from "../../auth.js";
 import type { SecretHandoffStore } from "../../secrets/handoff.js";
-import { sanitizeMicroApp } from "./projection.js";
+import { sanitizeMicroApp, sanitizeMicroAppDetail } from "./projection.js";
 import { decodeUpload, uploadContentTypes } from "../shared/upload.js";
 import { serialize, toolFailure, writeAnnotations } from "../../mcp/tool-support.js";
 
@@ -275,6 +275,29 @@ export function registerMicroAppTools(
 
         return {
           content: [{ type: "text" as const, text: serialize(sanitizeMicroApp(app), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_get_micro_app",
+    {
+      title: "Get a micro-app",
+      description:
+        "Get a Hoomi micro-app and its build/review detail. Secrets, demo credentials, reviewer IDs, and reviewer emails are not returned to the model.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID.")
+      })
+    },
+    async ({ entity_id, app_id }) => {
+      try {
+        const detail = await sdk.microApps.get(entity_id, app_id);
+        return {
+          content: [{ type: "text" as const, text: serialize(sanitizeMicroAppDetail(detail), maxToolOutputBytes) }]
         };
       } catch (error) {
         return toolFailure(error, maxToolOutputBytes);
