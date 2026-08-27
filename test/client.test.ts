@@ -68,10 +68,10 @@ test("sends JSON POST bodies without retrying or following redirects", async () 
     }
   });
 
-  await client.postJson("/v2/micro-apps/installed", { app_id: 1, app_version: "1.0.0" });
+  await client.postJson("/v2/partners/entity/1/apps/2/members", { email: "member@example.com", role_id: 3 });
 
   assert.equal(requestedInit?.method, "POST");
-  assert.equal(requestedInit?.body, JSON.stringify({ app_id: 1, app_version: "1.0.0" }));
+  assert.equal(requestedInit?.body, JSON.stringify({ email: "member@example.com", role_id: 3 }));
   assert.deepEqual(requestedInit?.headers, {
     Accept: "application/json",
     Authorization: "Bearer validated-session-token",
