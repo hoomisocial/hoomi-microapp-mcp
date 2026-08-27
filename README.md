@@ -10,7 +10,7 @@ The foundation exposes:
 - `GET /readyz` for readiness
 - `POST /mcp` using MCP Streamable HTTP in stateless mode
 
-The first read-only tools are available through the MCP endpoint: profile, workspaces, micro-app master data, micro-app search, and partner workspace app listing. Mutation tools are typed, allowlisted, and use separate confirmation and idempotency policies.
+Typed, allowlisted tools are available through the MCP endpoint for profile/workspaces, micro-app discovery and CRUD, app members, builds, build submissions, and build lifecycle actions. Mutations require explicit confirmation; app secrets are delivered only through a one-time authenticated handoff and are never returned as tool output.
 
 ## Authentication
 
