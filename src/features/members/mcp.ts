@@ -6,7 +6,7 @@ import { serialize, toolFailure, writeAnnotations } from "../../mcp/tool-support
 
 export function registerMemberTools(server: McpServer, sdk: HoomiSdk, maxToolOutputBytes: number): void {
   server.registerTool(
-    "hoomi_add_micro_app_member",
+    "hoomi_add_app_member",
     {
       title: "Add a micro-app member",
       description:
