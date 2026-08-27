@@ -8,7 +8,7 @@ import type { AuthenticatedPrincipal } from "../../auth.js";
 import type { SecretHandoffStore } from "../../secrets/handoff.js";
 import { sanitizeMicroApp } from "./projection.js";
 import { decodeUpload, uploadContentTypes } from "../shared/upload.js";
-import { serialize, toolFailure } from "../../mcp/tool-support.js";
+import { serialize, toolFailure, writeAnnotations } from "../../mcp/tool-support.js";
 
 export interface SecretHandoffContext {
   config: AppConfig;
@@ -185,6 +185,96 @@ export function registerMicroAppTools(
               )
             }
           ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_update_micro_app",
+    {
+      title: "Update a micro-app",
+      description:
+        "Update a Hoomi micro-app and its complete set of localized metadata. Publishing requires a distributed build; only call after explicit human confirmation.",
+      inputSchema: z
+        .object({
+          entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+          app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+          app_type: z.string().trim().min(1).max(50),
+          app_bundle: z.string().trim().regex(/^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+$/),
+          app_default_language: z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/),
+          app_category_id: z.number().int().positive(),
+          app_age_ratings_id: z.number().int().positive(),
+          app_privacy_url: httpsUrl.optional(),
+          app_tnc_url: httpsUrl.optional(),
+          marketing_url: httpsUrl.optional(),
+          app_allowed_countries: z.array(z.string().regex(/^[A-Z]{2}$/)).max(250).default([]),
+          cs_phone: z.string().trim().max(40).optional(),
+          cs_email: z.string().trim().email().max(320).optional(),
+          status: z.enum(["published", "unpublished"]).optional(),
+          app_lang: z.array(z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/)).min(1).max(20),
+          app_name: z.array(z.string().trim().min(1).max(160)).min(1).max(20),
+          app_description: z.array(z.string().trim().max(4000)).min(1).max(20),
+          app_tagline: z.array(z.string().trim().max(300)).min(1).max(20),
+          localized_logos: z
+            .array(
+              z.object({
+                language: z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/),
+                file: uploadSchema
+              })
+            )
+            .max(20)
+            .default([]),
+          confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this update.")
+        })
+        .superRefine((value, context) => {
+          const lengths = [value.app_lang.length, value.app_name.length, value.app_description.length, value.app_tagline.length];
+          if (new Set(lengths).size !== 1) {
+            context.addIssue({
+              code: "custom",
+              path: ["app_name"],
+              message: "app_lang, app_name, app_description, and app_tagline must have equal lengths"
+            });
+          }
+
+          if (!value.app_lang.includes(value.app_default_language)) {
+            context.addIssue({
+              code: "custom",
+              path: ["app_default_language"],
+              message: "app_default_language must be included in app_lang"
+            });
+          }
+        }),
+      annotations: writeAnnotations
+    },
+    async ({ entity_id, app_id, app_type, app_bundle, app_default_language, app_category_id, app_age_ratings_id,
+      app_privacy_url, app_tnc_url, marketing_url, app_allowed_countries, cs_phone, cs_email, status, app_lang,
+      app_name, app_description, app_tagline, localized_logos }) => {
+      try {
+        const app = await sdk.microApps.update(entity_id, app_id, {
+          appType: app_type,
+          appBundle: app_bundle,
+          appDefaultLanguage: app_default_language,
+          appCategoryId: app_category_id,
+          appAgeRatingsId: app_age_ratings_id,
+          appPrivacyUrl: app_privacy_url,
+          appTncUrl: app_tnc_url,
+          marketingUrl: marketing_url,
+          appAllowedCountries: app_allowed_countries,
+          csPhone: cs_phone,
+          csEmail: cs_email,
+          status,
+          appLanguages: app_lang,
+          appNames: app_name,
+          appDescriptions: app_description,
+          appTaglines: app_tagline,
+          localizedLogos: localized_logos.map((logo) => ({ language: logo.language, file: decodeUpload(logo.file) }))
+        });
+
+        return {
+          content: [{ type: "text" as const, text: serialize(sanitizeMicroApp(app), maxToolOutputBytes) }]
         };
       } catch (error) {
         return toolFailure(error, maxToolOutputBytes);

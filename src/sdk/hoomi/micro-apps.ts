@@ -22,6 +22,26 @@ export interface CreateMicroAppInput {
   appLogo?: HoomiFile;
 }
 
+export interface UpdateMicroAppInput {
+  appType: string;
+  appBundle: string;
+  appDefaultLanguage: string;
+  appCategoryId: number;
+  appAgeRatingsId: number;
+  appPrivacyUrl?: string;
+  appTncUrl?: string;
+  marketingUrl?: string;
+  appAllowedCountries?: string[];
+  csPhone?: string;
+  csEmail?: string;
+  status?: "published" | "unpublished";
+  appLanguages: string[];
+  appNames: string[];
+  appDescriptions: string[];
+  appTaglines: string[];
+  localizedLogos?: Array<{ language: string; file: HoomiFile }>;
+}
+
 export class MicroAppsSdk {
   constructor(private readonly client: HoomiApiClient | undefined) {}
 
@@ -80,6 +100,35 @@ export class MicroAppsSdk {
 
     const response = await requireHoomiClient(this.client).postForm<ApiEnvelope<MicroApp>>(
       `/v2/partners/entity/${entityId}/apps`,
+      fields
+    );
+    return unwrap<MicroApp>(response);
+  }
+
+  async update(entityId: number, appId: number, input: UpdateMicroAppInput): Promise<MicroApp> {
+    const fields: HoomiFormField[] = [];
+    appendText(fields, "app_type", input.appType);
+    appendText(fields, "app_bundle", input.appBundle);
+    appendText(fields, "app_default_language", input.appDefaultLanguage);
+    appendText(fields, "app_category_id", String(input.appCategoryId));
+    appendText(fields, "app_age_ratings_id", String(input.appAgeRatingsId));
+    appendText(fields, "app_privacy_url", input.appPrivacyUrl);
+    appendText(fields, "app_tnc_url", input.appTncUrl);
+    appendText(fields, "marketing_url", input.marketingUrl);
+    appendRepeated(fields, "app_allowed_countries", input.appAllowedCountries);
+    appendText(fields, "cs_phone", input.csPhone);
+    appendText(fields, "cs_email", input.csEmail);
+    appendText(fields, "status", input.status);
+    appendRepeated(fields, "app_lang", input.appLanguages);
+    appendRepeated(fields, "app_name", input.appNames);
+    appendRepeated(fields, "app_description", input.appDescriptions);
+    appendRepeated(fields, "app_tagline", input.appTaglines);
+    for (const logo of input.localizedLogos ?? []) {
+      appendFile(fields, `app_logo_${logo.language}`, logo.file);
+    }
+
+    const response = await requireHoomiClient(this.client).putForm<ApiEnvelope<MicroApp>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}`,
       fields
     );
     return unwrap<MicroApp>(response);
