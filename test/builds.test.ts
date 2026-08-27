@@ -43,6 +43,64 @@ test("creates a micro-app build as multipart form data", async () => {
   assert.equal(form.get("app_previews") instanceof Blob, true);
 });
 
+test("submits a micro-app build for review through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedMethod: string | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedMethod = init?.method;
+        return new Response(JSON.stringify({ success: true, data: { id: 1, app_status: "In Review" } }), {
+          status: 200
+        });
+      }
+    })
+  );
+
+  const build = await sdk.submitForReview(1, 1000000000, 1);
+
+  assert.deepEqual(build, { id: 1, app_status: "In Review" });
+  assert.equal(requestedMethod, "POST");
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1/submit-for-review"
+  );
+});
+
+test("marks a micro-app build ready to release through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedMethod: string | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedMethod = init?.method;
+        return new Response(JSON.stringify({ success: true, data: { id: 1, app_status: "Ready to Release" } }), {
+          status: 200
+        });
+      }
+    })
+  );
+
+  const build = await sdk.markReadyToRelease(1, 1000000000, 1);
+
+  assert.deepEqual(build, { id: 1, app_status: "Ready to Release" });
+  assert.equal(requestedMethod, "POST");
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1/ready-to-release"
+  );
+});
+
 test("gets a micro-app build through the developer platform route", async () => {
   let requestedUrl: URL | undefined;
   const sdk = new BuildsSdk(
