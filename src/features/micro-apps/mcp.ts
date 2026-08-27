@@ -304,4 +304,42 @@ export function registerMicroAppTools(
       }
     }
   );
+
+  server.registerTool(
+    "hoomi_delete_micro_app",
+    {
+      title: "Delete a micro-app",
+      description:
+        "Soft-delete a Hoomi micro-app from a partner workspace. This is destructive and requires explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this deletion.")
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ entity_id, app_id }) => {
+      try {
+        const response = await sdk.microApps.delete(entity_id, app_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serialize(
+                { deleted: true, entity_id, app_id, message: response.message ?? "Micro app deleted" },
+                maxToolOutputBytes
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
 }

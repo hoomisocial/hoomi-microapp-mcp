@@ -70,3 +70,27 @@ test("gets a micro-app through the developer platform route", async () => {
   assert.deepEqual(detail, { micro_apps: { id: 1000000000 } });
   assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000");
 });
+
+test("deletes a micro-app through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedMethod: string | undefined;
+  const sdk = new MicroAppsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedMethod = init?.method;
+        return new Response(JSON.stringify({ success: true, message: "Micro app deleted" }), { status: 200 });
+      }
+    })
+  );
+
+  const response = await sdk.delete(1, 1000000000);
+
+  assert.equal(response.success, true);
+  assert.equal(requestedMethod, "DELETE");
+  assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000");
+});
