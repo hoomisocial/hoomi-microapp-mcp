@@ -23,4 +23,17 @@ export class MembersSdk {
       `/v2/partners/entity/${entityId}/apps/${appId}/members/${memberId}`
     );
   }
+
+  async updateAppMemberRole(
+    entityId: number,
+    appId: number,
+    memberId: number,
+    input: { roleId: number }
+  ): Promise<AppMember> {
+    const response = await requireHoomiClient(this.client).putJson<ApiEnvelope<AppMember>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/members/${memberId}`,
+      { role_id: input.roleId }
+    );
+    return unwrap<AppMember>(response);
+  }
 }

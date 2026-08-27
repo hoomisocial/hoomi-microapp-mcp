@@ -89,4 +89,50 @@ export function registerMemberTools(server: McpServer, sdk: HoomiSdk, maxToolOut
       }
     }
   );
+
+  server.registerTool(
+    "hoomi_update_app_member_role",
+    {
+      title: "Update an app member role",
+      description:
+        "Change the app-level role for an existing Hoomi micro-app member. The workspace owner role cannot be assigned; only call after explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        member_id: z.number().int().positive().describe("Hoomi app-member grant ID, not the user ID."),
+        role_id: z
+          .number()
+          .int()
+          .positive()
+          .refine((value) => value !== 1, "The workspace owner role cannot be assigned to an app member."),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this role change.")
+      }),
+      annotations: writeAnnotations
+    },
+    async ({ entity_id, app_id, member_id, role_id }) => {
+      try {
+        const member = await sdk.members.updateAppMemberRole(entity_id, app_id, member_id, { roleId: role_id });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serialize(
+                {
+                  member_id: member?.member_id ?? member_id,
+                  app_id: member?.app_id ?? app_id,
+                  username: member?.username ?? null,
+                  role_id: member?.role_id ?? role_id,
+                  role_name: member?.role_name ?? null,
+                  created_at: member?.created_at ?? null
+                },
+                maxToolOutputBytes
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
 }
