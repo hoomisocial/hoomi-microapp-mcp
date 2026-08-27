@@ -10,7 +10,7 @@ The foundation exposes:
 - `GET /readyz` for readiness
 - `POST /mcp` using MCP Streamable HTTP in stateless mode
 
-Hoomi API tools are intentionally not exposed yet. They will be added as typed, allowlisted tools with separate read and mutation policies.
+The first read-only tools are available through the MCP endpoint: profile, workspaces, micro-app master data, micro-app search, and partner-app listing. Mutation tools will be added as typed, allowlisted tools with separate confirmation and idempotency policies.
 
 ## Authentication
 
@@ -66,3 +66,4 @@ The container runs as the non-root `node` user, drops Linux capabilities, uses a
 - Browser origins must be explicitly listed in `MCP_ALLOWED_ORIGINS`; wildcard origins are rejected.
 - Authorization values, cookies, request bodies containing secrets, and JWT library details are not logged.
 - Tools must not accept model-controlled arbitrary URLs, headers, or credentials.
+- Upstream calls are restricted to `/v2/` Hoomi routes, use a timeout and response-size cap, reject redirects, and forward only the validated session bearer.

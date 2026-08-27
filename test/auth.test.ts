@@ -16,6 +16,9 @@ const config: AppConfig = {
   hoomiJwtSecret: secret,
   hoomiJwtIssuer: "HOOMI-API",
   hoomiApiBaseUrl: "https://apidev.hoomi.social",
+  hoomiRequestTimeoutMs: 10_000,
+  hoomiMaxResponseBytes: 2_000_000,
+  maxToolOutputBytes: 200_000,
   allowedHosts: ["127.0.0.1"],
   allowedOrigins: []
 };

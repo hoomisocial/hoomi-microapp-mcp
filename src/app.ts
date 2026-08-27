@@ -82,7 +82,7 @@ async function handleMcpRequest(req: Request, res: Response, next: NextFunction)
     return;
   }
 
-  const mcpServer = createMcpServer(principal);
+  const mcpServer = createMcpServer(principal, req.app.locals.config);
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
   try {
@@ -121,6 +121,7 @@ function errorHandler(error: unknown, req: Request, res: Response, _next: NextFu
 
 export function createApp(config: AppConfig): Express {
   const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
+  app.locals.config = config;
 
   app.disable("x-powered-by");
   app.set("trust proxy", false);

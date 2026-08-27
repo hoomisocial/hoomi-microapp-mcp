@@ -6,6 +6,7 @@ export interface AuthenticatedPrincipal {
   userId: number | null;
   issuer: string | null;
   expiresAt: Date | null;
+  sessionToken?: string;
   mode: "hoomi-session" | "disabled";
 }
 
@@ -70,6 +71,7 @@ export async function authenticateRequest(
       userId,
       issuer: config.hoomiJwtIssuer,
       expiresAt: new Date(payload.exp * 1000),
+      sessionToken: token,
       mode: "hoomi-session"
     };
   } catch (error) {

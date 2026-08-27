@@ -13,6 +13,9 @@ const envSchema = z.object({
   HOOMI_JWT_SECRET: z.string().min(32).optional(),
   HOOMI_JWT_ISSUER: z.string().trim().min(1).default("HOOMI-API"),
   HOOMI_API_BASE_URL: z.string().url().default("https://apidev.hoomi.social"),
+  HOOMI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
+  HOOMI_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1_024).max(10_000_000).default(2_000_000),
+  MCP_MAX_TOOL_OUTPUT_BYTES: z.coerce.number().int().min(1_024).max(1_000_000).default(200_000),
   MCP_ALLOWED_HOSTS: z.string().default("localhost,127.0.0.1,[::1]"),
   MCP_ALLOWED_ORIGINS: z.string().default(""),
   ALLOW_INSECURE_LOCAL: z.enum(["true", "false"]).default("false")
@@ -29,6 +32,9 @@ export interface AppConfig {
   hoomiJwtSecret?: string;
   hoomiJwtIssuer: string;
   hoomiApiBaseUrl: string;
+  hoomiRequestTimeoutMs: number;
+  hoomiMaxResponseBytes: number;
+  maxToolOutputBytes: number;
   allowedHosts: string[];
   allowedOrigins: string[];
 }
@@ -94,6 +100,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     hoomiJwtSecret: parsed.HOOMI_JWT_SECRET,
     hoomiJwtIssuer: parsed.HOOMI_JWT_ISSUER,
     hoomiApiBaseUrl: upstreamUrl.origin + upstreamUrl.pathname.replace(/\/$/, ""),
+    hoomiRequestTimeoutMs: parsed.HOOMI_REQUEST_TIMEOUT_MS,
+    hoomiMaxResponseBytes: parsed.HOOMI_MAX_RESPONSE_BYTES,
+    maxToolOutputBytes: parsed.MCP_MAX_TOOL_OUTPUT_BYTES,
     allowedHosts,
     allowedOrigins: parseOrigins(parsed.MCP_ALLOWED_ORIGINS)
   };
