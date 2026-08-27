@@ -103,6 +103,11 @@ export class HoomiApiClient {
     return this.request<T>(url, "POST", JSON.stringify(body));
   }
 
+  async post<T>(path: string): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "POST");
+  }
+
   private buildUrl(path: string, query: Record<string, string | number | undefined>): URL {
     if (!path.startsWith("/v2/")) {
       throw new HoomiApiError("route_not_allowed", "Only Hoomi v2 API routes are allowed");

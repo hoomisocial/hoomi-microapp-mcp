@@ -80,6 +80,31 @@ test("sends JSON POST bodies without retrying or following redirects", async () 
   assert.equal(requestedInit?.redirect, "error");
 });
 
+test("supports bodyless POST lifecycle actions", async () => {
+  let requestedInit: RequestInit | undefined;
+  const client = new HoomiApiClient({
+    baseUrl: "https://apidev.hoomi.social",
+    sessionToken: "validated-session-token",
+    timeoutMs: 10_000,
+    maxResponseBytes: 2_000_000,
+    fetchImpl: async (_input, init) => {
+      requestedInit = init;
+      return new Response(JSON.stringify({ success: true, data: { app_status: "Waiting for Review" } }), {
+        status: 200
+      });
+    }
+  });
+
+  await client.post("/v2/partners/entity/1/apps/2/builds/3/submit-for-review");
+
+  assert.equal(requestedInit?.method, "POST");
+  assert.equal(requestedInit?.body, undefined);
+  assert.deepEqual(requestedInit?.headers, {
+    Accept: "application/json",
+    Authorization: "Bearer validated-session-token"
+  });
+});
+
 test("rejects routes outside the Hoomi v2 allowlist", async () => {
   const client = new HoomiApiClient({
     baseUrl: "https://apidev.hoomi.social",

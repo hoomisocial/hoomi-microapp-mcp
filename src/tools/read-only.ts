@@ -157,7 +157,12 @@ export function registerReadOnlyTools(
     ["hoomi_list_micro_app_languages", "/v2/micro-apps/languages", "List supported micro-app languages."],
     ["hoomi_list_micro_app_categories", "/v2/micro-apps/categories", "List available micro-app categories."],
     ["hoomi_list_micro_app_countries", "/v2/micro-apps/countries", "List supported micro-app countries."],
-    ["hoomi_list_micro_app_permissions", "/v2/micro-apps/permissions", "List available micro-app permissions."]
+    ["hoomi_list_micro_app_permissions", "/v2/micro-apps/permissions", "List available micro-app permissions."],
+    [
+      "hoomi_list_micro_app_permission_strings",
+      "/v2/micro-apps/permissions/strings",
+      "List localized micro-app permission names and descriptions."
+    ]
   ] as const;
 
   for (const [name, path, description] of masterDataTools) {
@@ -222,4 +227,145 @@ export function registerReadOnlyTools(
       }
     }
   );
+
+  server.registerTool(
+    "hoomi_list_installed_micro_apps",
+    {
+      description: "List the authenticated user's installed Hoomi micro-apps grouped by category.",
+      inputSchema: z.object({})
+    },
+    async () => {
+      try {
+        const response = await requireClient(client).get<unknown>("/v2/micro-apps/installed");
+        return {
+          content: [{ type: "text" as const, text: serialize(unwrap(response), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_check_installed_micro_app_permissions",
+    {
+      description: "Get the authenticated user's current permissions for one installed Hoomi micro-app.",
+      inputSchema: z.object({
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID.")
+      })
+    },
+    async ({ app_id }) => {
+      try {
+        const response = await requireClient(client).get<unknown>("/v2/micro-apps/installed/permissions", { app_id });
+        return {
+          content: [{ type: "text" as const, text: serialize(unwrap(response), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_list_pinned_micro_apps",
+    {
+      description: "List the authenticated user's pinned installed Hoomi micro-apps in pin order.",
+      inputSchema: z.object({})
+    },
+    async () => {
+      try {
+        const response = await requireClient(client).get<unknown>("/v2/micro-apps/installed/pinned");
+        return {
+          content: [{ type: "text" as const, text: serialize(unwrap(response), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_list_micro_app_reviews",
+    {
+      description: "List public reviews for a Hoomi micro-app without exposing reviewer email or user ID.",
+      inputSchema: z.object({
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        page: z.number().int().min(1).max(10_000).default(1).describe("1-based result page.")
+      })
+    },
+    async ({ app_id, page }) => {
+      try {
+        const response = await requireClient(client).get<unknown>(`/v2/micro-apps/${app_id}/reviews`, { page });
+        const payload = unwrap<unknown>(response);
+        if (Array.isArray(payload)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: serialize(
+                  payload.map((review) => sanitizeReview(review)),
+                  maxToolOutputBytes
+                )
+              }
+            ]
+          };
+        }
+
+        return {
+          content: [{ type: "text" as const, text: serialize(sanitizeReviewPage(payload), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_list_workspace_apps",
+    {
+      description: "List micro-apps in a Hoomi partner workspace where the authenticated user is a member.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID.")
+      })
+    },
+    async ({ entity_id }) => {
+      try {
+        const response = await requireClient(client).get<unknown>(`/v2/partners/entity/${entity_id}/apps`);
+        return {
+          content: [{ type: "text" as const, text: serialize(unwrap(response), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+}
+
+function sanitizeReview(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+
+  const review = value as Record<string, unknown>;
+  return {
+    id: review.id ?? null,
+    username: review.username ?? null,
+    app_lang: review.app_lang ?? null,
+    app_version: review.app_version ?? null,
+    ratings: review.ratings ?? null,
+    reviews: review.reviews ?? null,
+    created_at: review.created_at ?? null
+  };
+}
+
+function sanitizeReviewPage(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const page = value as Record<string, unknown>;
+  return {
+    ...page,
+    data: Array.isArray(page.data) ? page.data.map((review) => sanitizeReview(review)) : page.data
+  };
 }
