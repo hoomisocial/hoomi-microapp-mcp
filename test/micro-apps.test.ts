@@ -136,3 +136,36 @@ test("lists partner apps through the partner workspace route", async () => {
   assert.deepEqual(apps, [{ app_id: 1000000000 }]);
   assert.equal(requestedUrl?.toString(), "https://apidev.hoomi.social/v2/partners/entity/1/apps");
 });
+
+test("refreshes a micro-app secret through the partner workspace route", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedMethod: string | undefined;
+  const sdk = new MicroAppsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedMethod = init?.method;
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { app_id: 1000000000, app_secret: "rotated-secret", app_secret_expiry: "2026-09-26T00:00:00Z" }
+          }),
+          { status: 200 }
+        );
+      }
+    })
+  );
+
+  const rotation = await sdk.refreshSecret(1, 1000000000);
+
+  assert.equal(rotation.app_secret, "rotated-secret");
+  assert.equal(requestedMethod, "POST");
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/refresh-secret"
+  );
+});

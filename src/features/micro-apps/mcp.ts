@@ -362,4 +362,60 @@ export function registerMicroAppTools(
       }
     }
   );
+
+  server.registerTool(
+    "hoomi_refresh_app_secret",
+    {
+      title: "Refresh a micro-app secret",
+      description:
+        "Rotate a Hoomi micro-app secret. The new secret is never returned to the model; use the one-time UI handoff reference. Only call after explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this rotation.")
+      }),
+      annotations: writeAnnotations
+    },
+    async ({ entity_id, app_id }) => {
+      try {
+        if (!handoff.principal.userId) {
+          throw new HoomiApiError("session_required", "A validated Hoomi session is required for secret delivery");
+        }
+
+        const rotation = await sdk.microApps.refreshSecret(entity_id, app_id);
+        const rotatedAppId = rotation.app_id ?? app_id;
+        if (!rotation.app_secret) {
+          throw new HoomiApiError("invalid_upstream_response", "Hoomi API did not return a deliverable app secret");
+        }
+
+        const secretHandoff = await handoff.store.create(
+          handoff.principal.userId,
+          rotatedAppId,
+          rotation.app_secret,
+          handoff.config.secretHandoffTtlSeconds
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serialize(
+                {
+                  app_id: rotatedAppId,
+                  app_secret_expiry: rotation.app_secret_expiry ?? null,
+                  secret_handoff: {
+                    reference: secretHandoff.reference,
+                    expires_at: secretHandoff.expiresAt,
+                    consume_path: `${handoff.config.secretHandoffPath}/${secretHandoff.reference}/consume`
+                  }
+                },
+                maxToolOutputBytes
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
 }

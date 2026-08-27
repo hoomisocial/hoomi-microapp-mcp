@@ -1,7 +1,14 @@
 import { HoomiApiClient, requireHoomiClient } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
-import type { ApiEnvelope, HoomiFile, MicroApp, MicroAppDetail, MicroAppSummary } from "./types.js";
+import type {
+  ApiEnvelope,
+  AppSecretRotation,
+  HoomiFile,
+  MicroApp,
+  MicroAppDetail,
+  MicroAppSummary
+} from "./types.js";
 import { unwrap } from "./types.js";
 
 export interface CreateMicroAppInput {
@@ -152,5 +159,12 @@ export class MicroAppsSdk {
     return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
       `/v2/partners/entity/${entityId}/apps/${appId}`
     );
+  }
+
+  async refreshSecret(entityId: number, appId: number): Promise<AppSecretRotation> {
+    const response = await requireHoomiClient(this.client).post<ApiEnvelope<AppSecretRotation>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/refresh-secret`
+    );
+    return unwrap<AppSecretRotation>(response);
   }
 }

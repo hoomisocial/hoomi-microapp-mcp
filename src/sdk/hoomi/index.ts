@@ -21,6 +21,7 @@ export class HoomiSdk {
 export type { HoomiApiClient, HoomiApiError, HoomiFormField } from "./client.js";
 export type {
   ApiEnvelope,
+  AppSecretRotation,
   AppMember,
   Build,
   BuildSubmission,

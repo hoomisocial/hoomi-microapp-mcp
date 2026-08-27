@@ -106,6 +106,12 @@ export interface MicroAppDetail {
   reviews?: Review[];
 }
 
+export interface AppSecretRotation {
+  app_id?: number;
+  app_secret?: string;
+  app_secret_expiry?: string | null;
+}
+
 export interface Build {
   id?: number;
   app_lang?: string;
