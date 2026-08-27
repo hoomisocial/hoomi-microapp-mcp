@@ -133,3 +133,33 @@ test("deletes a micro-app build through the developer platform route", async () 
     "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1"
   );
 });
+
+test("lists build submissions through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input) => {
+        requestedUrl = new URL(input.toString());
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { submissions: [{ id: 3 }], submission_logs: [{ id: 3, activity: "Submission created" }] }
+          }),
+          { status: 200 }
+        );
+      }
+    })
+  );
+
+  const submissions = await sdk.listSubmissions(1, 1000000000, 1);
+
+  assert.deepEqual(submissions, { submissions: [{ id: 3 }], submission_logs: [{ id: 3, activity: "Submission created" }] });
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1/submissions"
+  );
+});

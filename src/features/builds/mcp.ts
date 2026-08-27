@@ -4,32 +4,9 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { HoomiSdk } from "../../sdk/hoomi/index.js";
-import type { Build } from "../../sdk/hoomi/index.js";
 import { serialize, toolFailure, writeAnnotations } from "../../mcp/tool-support.js";
 import { decodeUpload, uploadContentTypes } from "../shared/upload.js";
-
-function sanitizeBuild(value: Build | undefined): unknown {
-  if (!value) {
-    return null;
-  }
-
-  return {
-    id: value.id ?? null,
-    app_lang: value.app_lang ?? null,
-    app_version: value.app_version ?? null,
-    app_url: value.app_url ?? null,
-    app_previews: value.app_previews ?? [],
-    app_callback_url: value.app_callback_url ?? null,
-    app_permissions: value.app_permissions ?? [],
-    app_domains: value.app_domains ?? [],
-    app_ip_whitelist: value.app_ip_whitelist ?? [],
-    app_status: value.app_status ?? null,
-    submitted_date: value.submitted_date ?? null,
-    canceled_date: value.canceled_date ?? null,
-    distributed_date: value.distributed_date ?? null,
-    created_at: value.created_at ?? null
-  };
-}
+import { sanitizeBuild, sanitizeBuildSubmissions } from "./projection.js";
 
 const uploadSchema = z.object({
   filename: z.string().trim().min(1).max(128),
@@ -40,6 +17,29 @@ const uploadSchema = z.object({
 const httpsUrl = z.string().url().refine((value) => /^https?:$/.test(new URL(value).protocol), "URL must use HTTP(S)");
 
 export function registerBuildTools(server: McpServer, sdk: HoomiSdk, maxToolOutputBytes: number): void {
+  server.registerTool(
+    "hoomi_get_build_submissions",
+    {
+      title: "Get build submissions",
+      description: "Get review submissions and activity logs for a Hoomi micro-app build without reviewer IDs or emails.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        build_id: z.number().int().positive().describe("Hoomi micro-app build ID.")
+      })
+    },
+    async ({ entity_id, app_id, build_id }) => {
+      try {
+        const submissions = await sdk.builds.listSubmissions(entity_id, app_id, build_id);
+        return {
+          content: [{ type: "text" as const, text: serialize(sanitizeBuildSubmissions(submissions), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
   server.registerTool(
     "hoomi_get_micro_app_build",
     {

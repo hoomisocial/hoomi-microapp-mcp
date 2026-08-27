@@ -1,7 +1,7 @@
 import { HoomiApiClient, requireHoomiClient } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
-import type { ApiEnvelope, Build, HoomiFile } from "./types.js";
+import type { ApiEnvelope, Build, BuildSubmissions, HoomiFile } from "./types.js";
 import { unwrap } from "./types.js";
 
 export interface CreateBuildInput {
@@ -81,5 +81,12 @@ export class BuildsSdk {
     return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
       `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}`
     );
+  }
+
+  async listSubmissions(entityId: number, appId: number, buildId: number): Promise<BuildSubmissions> {
+    const response = await requireHoomiClient(this.client).get<ApiEnvelope<BuildSubmissions>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}/submissions`
+    );
+    return unwrap<BuildSubmissions>(response);
   }
 }

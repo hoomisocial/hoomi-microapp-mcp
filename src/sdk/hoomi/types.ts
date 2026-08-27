@@ -141,6 +141,11 @@ export interface BuildSubmission {
   created_at?: string;
 }
 
+export interface BuildSubmissions {
+  submissions?: BuildSubmission[];
+  submission_logs?: SubmissionLog[];
+}
+
 export interface SubmissionLog {
   id?: number;
   activity?: string;

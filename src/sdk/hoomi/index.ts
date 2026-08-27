@@ -24,6 +24,7 @@ export type {
   AppSecretRotation,
   AppMember,
   Build,
+  BuildSubmissions,
   BuildSubmission,
   HoomiFile,
   MicroApp,
