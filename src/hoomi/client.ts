@@ -98,6 +98,11 @@ export class HoomiApiClient {
     return this.request<T>(url, "GET");
   }
 
+  async postJson<T>(path: string, body: unknown): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "POST", JSON.stringify(body));
+  }
+
   private buildUrl(path: string, query: Record<string, string | number | undefined>): URL {
     if (!path.startsWith("/v2/")) {
       throw new HoomiApiError("route_not_allowed", "Only Hoomi v2 API routes are allowed");
@@ -113,7 +118,7 @@ export class HoomiApiClient {
     return url;
   }
 
-  private async request<T>(url: URL, method: "GET"): Promise<T> {
+  private async request<T>(url: URL, method: "GET" | "POST", requestBody?: string): Promise<T> {
     if (!this.options.sessionToken) {
       throw new HoomiApiError("session_required", "A validated Hoomi session is required for this tool");
     }
@@ -122,17 +127,23 @@ export class HoomiApiClient {
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
 
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        Authorization: `Bearer ${this.options.sessionToken}`
+      };
+      if (requestBody !== undefined) {
+        headers["Content-Type"] = "application/json";
+      }
+
       const response = await this.fetchImpl(url, {
         method,
         redirect: "error",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${this.options.sessionToken}`
-        },
+        headers,
+        body: requestBody,
         signal: controller.signal
       });
       const text = await readBody(response, this.options.maxResponseBytes);
-      const body = parseBody(text);
+      const responseBody = parseBody(text);
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -141,12 +152,12 @@ export class HoomiApiClient {
 
         throw new HoomiApiError(
           "upstream_request_failed",
-          errorMessage(body) ?? `Hoomi API returned HTTP ${response.status}`,
+          errorMessage(responseBody) ?? `Hoomi API returned HTTP ${response.status}`,
           response.status
         );
       }
 
-      return body as T;
+      return responseBody as T;
     } catch (error) {
       if (error instanceof HoomiApiError) {
         throw error;

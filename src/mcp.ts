@@ -4,6 +4,7 @@ import type { AuthenticatedPrincipal } from "./auth.js";
 import type { AppConfig } from "./config.js";
 import { HoomiApiClient } from "./hoomi/client.js";
 import { registerReadOnlyTools } from "./tools/read-only.js";
+import { registerWriteTools } from "./tools/write.js";
 
 const SERVER_VERSION = "0.1.0";
 
@@ -23,5 +24,6 @@ export function createMcpServer(principal: AuthenticatedPrincipal, config: AppCo
     : undefined;
 
   registerReadOnlyTools(server, hoomiClient, config.maxToolOutputBytes);
+  registerWriteTools(server, hoomiClient, config.maxToolOutputBytes);
   return server;
 }

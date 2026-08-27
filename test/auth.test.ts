@@ -36,6 +36,7 @@ test("accepts a valid Hoomi session JWT", async () => {
 
   assert.equal(principal.userId, 42);
   assert.equal(principal.mode, "hoomi-session");
+  assert.equal(principal.sessionToken, token);
 });
 
 test("rejects a missing authorization header", async () => {

@@ -55,6 +55,31 @@ test("maps an upstream 401 without exposing response internals", async () => {
   );
 });
 
+test("sends JSON POST bodies without retrying or following redirects", async () => {
+  let requestedInit: RequestInit | undefined;
+  const client = new HoomiApiClient({
+    baseUrl: "https://apidev.hoomi.social",
+    sessionToken: "validated-session-token",
+    timeoutMs: 10_000,
+    maxResponseBytes: 2_000_000,
+    fetchImpl: async (_input, init) => {
+      requestedInit = init;
+      return new Response(JSON.stringify({ success: true, data: { id: 1 } }), { status: 201 });
+    }
+  });
+
+  await client.postJson("/v2/micro-apps/installed", { app_id: 1, app_version: "1.0.0" });
+
+  assert.equal(requestedInit?.method, "POST");
+  assert.equal(requestedInit?.body, JSON.stringify({ app_id: 1, app_version: "1.0.0" }));
+  assert.deepEqual(requestedInit?.headers, {
+    Accept: "application/json",
+    Authorization: "Bearer validated-session-token",
+    "Content-Type": "application/json"
+  });
+  assert.equal(requestedInit?.redirect, "error");
+});
+
 test("rejects routes outside the Hoomi v2 allowlist", async () => {
   const client = new HoomiApiClient({
     baseUrl: "https://apidev.hoomi.social",

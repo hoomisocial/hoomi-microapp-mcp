@@ -8,7 +8,7 @@ import { createApp } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 
 const secret = "a-secure-test-secret-that-is-long-enough";
-const config: AppConfig = {
+const baseConfig: AppConfig = {
   nodeEnv: "test",
   host: "127.0.0.1",
   port: 8300,
@@ -51,101 +51,84 @@ function parseMcpResponse(rawBody: string): Record<string, unknown> {
   return JSON.parse(dataLine ? dataLine.slice("data: ".length) : rawBody) as Record<string, unknown>;
 }
 
-test("serves health and protects the MCP endpoint", async () => {
-  const server = await listen(createApp(config));
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-
-  try {
-    const healthResponse = await fetch(`${baseUrl}/healthz`);
-    assert.equal(healthResponse.status, 200);
-    assert.deepEqual(await healthResponse.json(), { status: "ok", service: "hoomi-mcp" });
-
-    const unauthorizedResponse = await fetch(`${baseUrl}/mcp`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}"
-    });
-    assert.equal(unauthorizedResponse.status, 401);
-    assert.match(unauthorizedResponse.headers.get("www-authenticate") ?? "", /Bearer/);
-  } finally {
-    await close(server);
-  }
-});
-
-test("handles a stateless MCP initialize request", async () => {
-  const server = await listen(createApp(config));
-  const address = server.address();
-  assert.ok(address && typeof address !== "string");
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-
-  try {
-    const token = await createToken();
-    const response = await fetch(`${baseUrl}/mcp`, {
-      method: "POST",
-      headers: {
-        accept: "application/json, text/event-stream",
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-06-18",
-          capabilities: {},
-          clientInfo: { name: "hoomi-mcp-test", version: "0.1.0" }
-        }
-      })
-    });
-
-    assert.equal(response.status, 200);
-    const body = parseMcpResponse(await response.text()) as {
-      result?: { serverInfo?: { name?: string }; capabilities?: Record<string, unknown> };
-    };
-    assert.equal(body.result?.serverInfo?.name, "hoomi-mcp");
-    assert.deepEqual(body.result?.capabilities, { tools: { listChanged: true } });
-  } finally {
-    await close(server);
-  }
-});
-
-test("executes a read-only tool without exposing sensitive upstream profile fields", async () => {
-  let authorizationHeader: string | undefined;
-  const upstream = createServer((request, response) => {
-    authorizationHeader = request.headers.authorization;
-    response.setHeader("content-type", "application/json");
-    response.end(
-      JSON.stringify({
-        success: true,
-        data: {
-          id: 42,
-          name: "Ada",
-          username: "ada",
-          imgUrl: null,
-          emailVerified: true,
-          phoneNumber: "+620000000",
-          wallets: [{ address: "wallet-secret" }]
-        }
-      })
-    );
+test("rejects a write tool call without explicit confirmation", async () => {
+  let upstreamCalls = 0;
+  const upstream = createServer((_request, response) => {
+    upstreamCalls += 1;
+    response.statusCode = 500;
+    response.end();
   });
   await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
   const upstreamAddress = upstream.address();
   assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
 
   const server = await listen(
-    createApp({ ...config, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` })
+    createApp({ ...baseConfig, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` })
   );
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        authorization: `Bearer ${await createToken()}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "hoomi_install_micro_app",
+          arguments: { app_id: 1000000001, app_version: "1.0.0", confirm: false }
+        }
+      })
+    });
+
+    assert.equal(response.status, 200);
+    const body = parseMcpResponse(await response.text());
+    const result = body.result as { isError?: boolean; content?: Array<{ text: string }> };
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result), /confirm/);
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    await close(server);
+    await close(upstream);
+  }
+});
+
+test("forwards a confirmed install as a single JSON POST", async () => {
+  let requestMethod: string | undefined;
+  let requestPath: string | undefined;
+  let requestBody = "";
+  let authorizationHeader: string | undefined;
+  const upstream = createServer((request, response) => {
+    requestMethod = request.method;
+    requestPath = request.url;
+    authorizationHeader = request.headers.authorization;
+    request.on("data", (chunk: Buffer) => {
+      requestBody += chunk.toString("utf8");
+    });
+    request.on("end", () => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ success: true, data: { id: 9, app_id: 1000000001, app_version: "1.0.0" } }));
+    });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", () => resolve()));
+  const upstreamAddress = upstream.address();
+  assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
+
+  const server = await listen(
+    createApp({ ...baseConfig, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` })
+  );
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
 
   try {
     const token = await createToken();
-    const response = await fetch(`${baseUrl}/mcp`, {
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
       method: "POST",
       headers: {
         accept: "application/json, text/event-stream",
@@ -156,20 +139,33 @@ test("executes a read-only tool without exposing sensitive upstream profile fiel
         jsonrpc: "2.0",
         id: 2,
         method: "tools/call",
-        params: { name: "hoomi_get_profile", arguments: {} }
+        params: {
+          name: "hoomi_install_micro_app",
+          arguments: {
+            app_id: 1000000001,
+            app_version: "1.0.0",
+            app_permissions: { camera: true, wallet: false },
+            confirm: true
+          }
+        }
       })
     });
 
     assert.equal(response.status, 200);
-    const rawBody = await response.text();
-    const body = parseMcpResponse(rawBody);
+    const body = parseMcpResponse(await response.text());
     const result = body.result as { content: Array<{ text: string }> };
-    const profile = JSON.parse(result.content[0].text) as Record<string, unknown>;
-    assert.equal(profile.id, 42);
-    assert.equal(profile.name, "Ada");
-    assert.equal(profile.email_verified, true);
-    assert.equal("phoneNumber" in profile, false);
-    assert.equal("wallets" in profile, false);
+    assert.deepEqual(JSON.parse(result.content[0].text), {
+      id: 9,
+      app_id: 1000000001,
+      app_version: "1.0.0"
+    });
+    assert.equal(requestMethod, "POST");
+    assert.equal(requestPath, "/v2/micro-apps/installed");
+    assert.equal(requestBody, JSON.stringify({
+      app_id: 1000000001,
+      app_version: "1.0.0",
+      app_permissions: { camera: true, wallet: false }
+    }));
     assert.equal(authorizationHeader, `Bearer ${token}`);
   } finally {
     await close(server);
