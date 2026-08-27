@@ -55,4 +55,11 @@ export class BuildsSdk {
     );
     return unwrap<Build>(response);
   }
+
+  async get(entityId: number, appId: number, buildId: number): Promise<Build> {
+    const response = await requireHoomiClient(this.client).get<ApiEnvelope<Build>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}`
+    );
+    return unwrap<Build>(response);
+  }
 }

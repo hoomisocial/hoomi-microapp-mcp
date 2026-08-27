@@ -42,3 +42,29 @@ test("creates a micro-app build as multipart form data", async () => {
   assert.equal(form.get("app_domains"), "demo.example.com, api.demo.example.com");
   assert.equal(form.get("app_previews") instanceof Blob, true);
 });
+
+test("gets a micro-app build through the developer platform route", async () => {
+  let requestedUrl: URL | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input) => {
+        requestedUrl = new URL(input.toString());
+        return new Response(JSON.stringify({ success: true, data: { id: 1, app_status: "Prepare Submission" } }), {
+          status: 200
+        });
+      }
+    })
+  );
+
+  const build = await sdk.get(1, 1000000000, 1);
+
+  assert.deepEqual(build, { id: 1, app_status: "Prepare Submission" });
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1"
+  );
+});

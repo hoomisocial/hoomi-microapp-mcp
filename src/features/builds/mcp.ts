@@ -41,6 +41,27 @@ const httpsUrl = z.string().url().refine((value) => /^https?:$/.test(new URL(val
 
 export function registerBuildTools(server: McpServer, sdk: HoomiSdk, maxToolOutputBytes: number): void {
   server.registerTool(
+    "hoomi_get_micro_app_build",
+    {
+      title: "Get a micro-app build",
+      description: "Get a Hoomi micro-app build without demo credentials.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        build_id: z.number().int().positive().describe("Hoomi micro-app build ID.")
+      })
+    },
+    async ({ entity_id, app_id, build_id }) => {
+      try {
+        const build = await sdk.builds.get(entity_id, app_id, build_id);
+        return { content: [{ type: "text" as const, text: serialize(sanitizeBuild(build), maxToolOutputBytes) }] };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
     "hoomi_create_micro_app_build",
     {
       title: "Create a micro-app build",
