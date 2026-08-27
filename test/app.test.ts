@@ -6,6 +6,7 @@ import { SignJWT } from "jose";
 
 import { createApp } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
+import { MemorySecretHandoffStore } from "../src/secrets/handoff.js";
 
 const secret = "a-secure-test-secret-that-is-long-enough";
 const config: AppConfig = {
@@ -20,6 +21,9 @@ const config: AppConfig = {
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
   maxToolOutputBytes: 200_000,
+  secretHandoffStore: "memory",
+  secretHandoffTtlSeconds: 300,
+  secretHandoffPath: "/v1/secret-handoffs",
   allowedHosts: ["127.0.0.1"],
   allowedOrigins: []
 };
@@ -52,7 +56,8 @@ function parseMcpResponse(rawBody: string): Record<string, unknown> {
 }
 
 test("serves health and protects the MCP endpoint", async () => {
-  const server = await listen(createApp(config));
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -71,11 +76,13 @@ test("serves health and protects the MCP endpoint", async () => {
     assert.match(unauthorizedResponse.headers.get("www-authenticate") ?? "", /Bearer/);
   } finally {
     await close(server);
+    await store.close();
   }
 });
 
 test("handles a stateless MCP initialize request", async () => {
-  const server = await listen(createApp(config));
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const baseUrl = `http://127.0.0.1:${address.port}`;
@@ -109,6 +116,7 @@ test("handles a stateless MCP initialize request", async () => {
     assert.deepEqual(body.result?.capabilities, { tools: { listChanged: true } });
   } finally {
     await close(server);
+    await store.close();
   }
 });
 
@@ -136,8 +144,9 @@ test("executes a read-only tool without exposing sensitive upstream profile fiel
   const upstreamAddress = upstream.address();
   assert.ok(upstreamAddress && typeof upstreamAddress !== "string");
 
+  const store = new MemorySecretHandoffStore();
   const server = await listen(
-    createApp({ ...config, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` })
+    createApp({ ...config, hoomiApiBaseUrl: `http://127.0.0.1:${upstreamAddress.port}` }, store)
   );
   const address = server.address();
   assert.ok(address && typeof address !== "string");
@@ -174,5 +183,40 @@ test("executes a read-only tool without exposing sensitive upstream profile fiel
   } finally {
     await close(server);
     await close(upstream);
+    await store.close();
+  }
+});
+
+test("consumes an app secret handoff exactly once for its owning user", async () => {
+  const store = new MemorySecretHandoffStore();
+  const handoff = await store.create(42, 1000000001, "one-time-app-secret", 60);
+  const server = await listen(createApp(config, store));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  try {
+    const token = await createToken();
+    const url = `http://127.0.0.1:${address.port}/v1/secret-handoffs/${handoff.reference}/consume`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await response.json(), {
+      app_id: 1000000001,
+      app_secret: "one-time-app-secret",
+      expires_at: handoff.expiresAt
+    });
+
+    const secondResponse = await fetch(url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(secondResponse.status, 404);
+  } finally {
+    await close(server);
+    await store.close();
   }
 });

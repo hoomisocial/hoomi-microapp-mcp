@@ -16,6 +16,15 @@ const envSchema = z.object({
   HOOMI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
   HOOMI_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1_024).max(10_000_000).default(2_000_000),
   MCP_MAX_TOOL_OUTPUT_BYTES: z.coerce.number().int().min(1_024).max(1_000_000).default(200_000),
+  SECRET_HANDOFF_STORE: z.enum(["redis", "memory"]).default("redis"),
+  REDIS_URL: z.string().url().optional(),
+  SECRET_HANDOFF_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
+  SECRET_HANDOFF_ENCRYPTION_KEY: z.string().min(32).optional(),
+  SECRET_HANDOFF_PATH: z
+    .string()
+    .trim()
+    .regex(/^\/[A-Za-z0-9/_-]*$/)
+    .default("/v1/secret-handoffs"),
   MCP_ALLOWED_HOSTS: z.string().default("localhost,127.0.0.1,[::1]"),
   MCP_ALLOWED_ORIGINS: z.string().default(""),
   ALLOW_INSECURE_LOCAL: z.enum(["true", "false"]).default("false")
@@ -35,6 +44,11 @@ export interface AppConfig {
   hoomiRequestTimeoutMs: number;
   hoomiMaxResponseBytes: number;
   maxToolOutputBytes: number;
+  secretHandoffStore: "redis" | "memory";
+  redisUrl?: string;
+  secretHandoffTtlSeconds: number;
+  secretHandoffEncryptionKey?: string;
+  secretHandoffPath: string;
   allowedHosts: string[];
   allowedOrigins: string[];
 }
@@ -77,6 +91,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error("HOOMI_JWT_SECRET is required when MCP_AUTH_MODE=hoomi-session");
   }
 
+  if (parsed.SECRET_HANDOFF_STORE === "redis" && !parsed.REDIS_URL) {
+    throw new Error("REDIS_URL is required when SECRET_HANDOFF_STORE=redis");
+  }
+
+  if (parsed.NODE_ENV === "production" && parsed.SECRET_HANDOFF_STORE !== "redis") {
+    throw new Error("SECRET_HANDOFF_STORE=memory is not allowed in production");
+  }
+
+  if (parsed.NODE_ENV === "production" && !parsed.SECRET_HANDOFF_ENCRYPTION_KEY) {
+    throw new Error("SECRET_HANDOFF_ENCRYPTION_KEY is required in production");
+  }
+
   if (
     parsed.MCP_AUTH_MODE === "disabled" &&
     (parsed.NODE_ENV === "production" || parsed.ALLOW_INSECURE_LOCAL !== "true")
@@ -103,6 +129,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     hoomiRequestTimeoutMs: parsed.HOOMI_REQUEST_TIMEOUT_MS,
     hoomiMaxResponseBytes: parsed.HOOMI_MAX_RESPONSE_BYTES,
     maxToolOutputBytes: parsed.MCP_MAX_TOOL_OUTPUT_BYTES,
+    secretHandoffStore: parsed.SECRET_HANDOFF_STORE,
+    redisUrl: parsed.REDIS_URL,
+    secretHandoffTtlSeconds: parsed.SECRET_HANDOFF_TTL_SECONDS,
+    secretHandoffEncryptionKey: parsed.SECRET_HANDOFF_ENCRYPTION_KEY,
+    secretHandoffPath: parsed.SECRET_HANDOFF_PATH,
     allowedHosts,
     allowedOrigins: parseOrigins(parsed.MCP_ALLOWED_ORIGINS)
   };

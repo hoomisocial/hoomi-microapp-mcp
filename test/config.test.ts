@@ -7,6 +7,9 @@ test("loads secure Hoomi defaults with explicit runtime values", () => {
   const config = loadConfig({
     NODE_ENV: "production",
     HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+    SECRET_HANDOFF_STORE: "redis",
+    REDIS_URL: "redis://:test-password@localhost:6379",
+    SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough",
     MCP_ALLOWED_HOSTS: "mcp.hoomi.social,localhost",
     MCP_ALLOWED_ORIGINS: "https://app.hoomi.social"
   });
@@ -24,7 +27,10 @@ test("rejects insecure auth in production", () => {
       loadConfig({
         NODE_ENV: "production",
         MCP_AUTH_MODE: "disabled",
-        ALLOW_INSECURE_LOCAL: "true"
+        ALLOW_INSECURE_LOCAL: "true",
+        SECRET_HANDOFF_STORE: "redis",
+        REDIS_URL: "redis://:test-password@localhost:6379",
+        SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough"
       }),
     /non-production NODE_ENV/
   );
@@ -32,7 +38,7 @@ test("rejects insecure auth in production", () => {
 
 test("requires an explicit opt-in for local unauthenticated mode", () => {
   assert.throws(
-    () => loadConfig({ NODE_ENV: "development", MCP_AUTH_MODE: "disabled" }),
+    () => loadConfig({ NODE_ENV: "development", MCP_AUTH_MODE: "disabled", SECRET_HANDOFF_STORE: "memory" }),
     /ALLOW_INSECURE_LOCAL=true/
   );
 });

@@ -5,9 +5,10 @@ import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import helmet from "helmet";
 
-import { authenticateRequest, AuthenticationError } from "./auth.js";
+import { authenticateRequest, AuthenticationError, type AuthenticatedPrincipal } from "./auth.js";
 import type { AppConfig } from "./config.js";
 import { createMcpServer } from "./mcp.js";
+import type { SecretHandoffStore } from "./secrets/handoff.js";
 
 function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
   const suppliedId = req.get("x-request-id");
@@ -100,6 +101,44 @@ async function handleMcpRequest(req: Request, res: Response, next: NextFunction)
   }
 }
 
+async function consumeSecretHandoff(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  store: SecretHandoffStore
+): Promise<void> {
+  const principal = res.locals.auth as AuthenticatedPrincipal | undefined;
+  if (!principal?.userId) {
+    res.setHeader("WWW-Authenticate", 'Bearer realm="hoomi-mcp"');
+    res.status(401).json({ error: "invalid_token", request_id: res.locals.requestId });
+    return;
+  }
+
+  try {
+    const reference = req.params.reference;
+    if (typeof reference !== "string") {
+      res.status(404).json({ error: "secret_handoff_not_found", request_id: res.locals.requestId });
+      return;
+    }
+
+    const payload = await store.consume(principal.userId, reference);
+    if (!payload) {
+      res.status(404).json({ error: "secret_handoff_not_found", request_id: res.locals.requestId });
+      return;
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Pragma", "no-cache");
+    res.status(200).json({
+      app_id: payload.appId,
+      app_secret: payload.appSecret,
+      expires_at: payload.expiresAt
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 function errorHandler(error: unknown, req: Request, res: Response, _next: NextFunction): void {
   console.error(
     JSON.stringify({
@@ -119,7 +158,7 @@ function errorHandler(error: unknown, req: Request, res: Response, _next: NextFu
   res.status(500).json({ error: "internal_server_error", request_id: res.locals.requestId });
 }
 
-export function createApp(config: AppConfig): Express {
+export function createApp(config: AppConfig, secretHandoffStore: SecretHandoffStore): Express {
   const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
   app.locals.config = config;
 
@@ -145,6 +184,12 @@ export function createApp(config: AppConfig): Express {
   app.all(config.mcpPath, (_req, res) => {
     res.setHeader("Allow", "POST, OPTIONS");
     res.status(405).json({ error: "method_not_allowed" });
+  });
+
+  app.use(config.secretHandoffPath, originPolicy(config));
+  app.use(config.secretHandoffPath, authenticationMiddleware(config));
+  app.post(`${config.secretHandoffPath}/:reference/consume`, (req, res, next) => {
+    void consumeSecretHandoff(req, res, next, secretHandoffStore);
   });
 
   app.use(errorHandler);
