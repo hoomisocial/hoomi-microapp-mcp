@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { HoomiApiClient, HoomiApiError } from "../src/hoomi/client.js";
+import { HoomiApiClient, HoomiApiError } from "../src/sdk/hoomi/client.js";
 
 test("sends only the server-owned Hoomi bearer header and bounded query values", async () => {
   let requestedUrl: URL | undefined;

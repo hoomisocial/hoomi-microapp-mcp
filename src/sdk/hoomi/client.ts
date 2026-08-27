@@ -6,6 +6,12 @@ export interface HoomiApiClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+export interface HoomiFormField {
+  name: string;
+  value: string | Blob;
+  filename?: string;
+}
+
 export class HoomiApiError extends Error {
   readonly status: number | null;
   readonly code: string;
@@ -108,6 +114,39 @@ export class HoomiApiClient {
     return this.request<T>(url, "POST");
   }
 
+  async postForm<T>(path: string, fields: HoomiFormField[]): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "POST", this.createFormData(fields));
+  }
+
+  async putJson<T>(path: string, body: unknown): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "PUT", JSON.stringify(body));
+  }
+
+  async putForm<T>(path: string, fields: HoomiFormField[]): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "PUT", this.createFormData(fields));
+  }
+
+  async delete<T>(path: string): Promise<T> {
+    const url = this.buildUrl(path, {});
+    return this.request<T>(url, "DELETE");
+  }
+
+  private createFormData(fields: HoomiFormField[]): FormData {
+    const form = new FormData();
+    for (const field of fields) {
+      if (field.value instanceof Blob) {
+        form.append(field.name, field.value, field.filename ?? "upload");
+      } else {
+        form.append(field.name, field.value);
+      }
+    }
+
+    return form;
+  }
+
   private buildUrl(path: string, query: Record<string, string | number | undefined>): URL {
     if (!path.startsWith("/v2/")) {
       throw new HoomiApiError("route_not_allowed", "Only Hoomi v2 API routes are allowed");
@@ -123,7 +162,11 @@ export class HoomiApiClient {
     return url;
   }
 
-  private async request<T>(url: URL, method: "GET" | "POST", requestBody?: string): Promise<T> {
+  private async request<T>(
+    url: URL,
+    method: "GET" | "POST" | "PUT" | "DELETE",
+    requestBody?: string | FormData
+  ): Promise<T> {
     if (!this.options.sessionToken) {
       throw new HoomiApiError("session_required", "A validated Hoomi session is required for this tool");
     }
@@ -136,7 +179,7 @@ export class HoomiApiClient {
         Accept: "application/json",
         Authorization: `Bearer ${this.options.sessionToken}`
       };
-      if (requestBody !== undefined) {
+      if (typeof requestBody === "string") {
         headers["Content-Type"] = "application/json";
       }
 
@@ -177,4 +220,12 @@ export class HoomiApiClient {
       clearTimeout(timeout);
     }
   }
+}
+
+export function requireHoomiClient(client: HoomiApiClient | undefined): HoomiApiClient {
+  if (!client) {
+    throw new HoomiApiError("session_required", "A validated Hoomi session is required for this tool");
+  }
+
+  return client;
 }
