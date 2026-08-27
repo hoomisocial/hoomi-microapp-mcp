@@ -163,3 +163,39 @@ test("lists build submissions through the developer platform route", async () =>
     "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1/submissions"
   );
 });
+
+test("creates a build submission as multipart form data", async () => {
+  let requestedUrl: URL | undefined;
+  let requestedInit: RequestInit | undefined;
+  const sdk = new BuildsSdk(
+    new HoomiApiClient({
+      baseUrl: "https://apidev.hoomi.social",
+      sessionToken: "validated-session-token",
+      timeoutMs: 10_000,
+      maxResponseBytes: 2_000_000,
+      fetchImpl: async (input, init) => {
+        requestedUrl = new URL(input.toString());
+        requestedInit = init;
+        return new Response(
+          JSON.stringify({ success: true, data: { id: 3, app_review: "Please review this build" } }),
+          { status: 201 }
+        );
+      }
+    })
+  );
+
+  const submission = await sdk.createSubmission(1, 1000000000, 1, {
+    appReview: "Please review this build",
+    reviewFiles: [{ data: new Uint8Array([1, 2, 3]), filename: "review.png", contentType: "image/png" }]
+  });
+
+  assert.deepEqual(submission, { id: 3, app_review: "Please review this build" });
+  assert.equal(
+    requestedUrl?.toString(),
+    "https://apidev.hoomi.social/v2/partners/entity/1/apps/1000000000/builds/1/submissions"
+  );
+  assert.equal(requestedInit?.method, "POST");
+  const form = requestedInit?.body as FormData;
+  assert.equal(form.get("app_review"), "Please review this build");
+  assert.equal(form.get("review_files") instanceof Blob, true);
+});

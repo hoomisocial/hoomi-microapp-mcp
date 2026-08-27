@@ -1,6 +1,6 @@
 import type { Build, BuildSubmission, SubmissionLog } from "../../sdk/hoomi/index.js";
 
-function sanitizeSubmission(submission: BuildSubmission): Record<string, unknown> {
+export function sanitizeSubmission(submission: BuildSubmission): Record<string, unknown> {
   return {
     id: submission.id ?? null,
     username: submission.username ?? null,

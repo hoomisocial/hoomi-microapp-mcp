@@ -1,7 +1,7 @@
 import { HoomiApiClient, requireHoomiClient } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
-import type { ApiEnvelope, Build, BuildSubmissions, HoomiFile } from "./types.js";
+import type { ApiEnvelope, Build, BuildSubmission, BuildSubmissions, HoomiFile } from "./types.js";
 import { unwrap } from "./types.js";
 
 export interface CreateBuildInput {
@@ -18,6 +18,11 @@ export interface CreateBuildInput {
 }
 
 export type UpdateBuildInput = CreateBuildInput;
+
+export interface CreateSubmissionInput {
+  appReview: string;
+  reviewFiles?: HoomiFile[];
+}
 
 function buildFormFields(input: CreateBuildInput): HoomiFormField[] {
   const fields: HoomiFormField[] = [];
@@ -88,5 +93,24 @@ export class BuildsSdk {
       `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}/submissions`
     );
     return unwrap<BuildSubmissions>(response);
+  }
+
+  async createSubmission(
+    entityId: number,
+    appId: number,
+    buildId: number,
+    input: CreateSubmissionInput
+  ): Promise<BuildSubmission> {
+    const fields: HoomiFormField[] = [];
+    appendText(fields, "app_review", input.appReview);
+    for (const file of input.reviewFiles ?? []) {
+      appendFile(fields, "review_files", file);
+    }
+
+    const response = await requireHoomiClient(this.client).postForm<ApiEnvelope<BuildSubmission>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}/submissions`,
+      fields
+    );
+    return unwrap<BuildSubmission>(response);
   }
 }

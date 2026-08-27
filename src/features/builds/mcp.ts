@@ -6,7 +6,7 @@ import { z } from "zod";
 import { HoomiSdk } from "../../sdk/hoomi/index.js";
 import { serialize, toolFailure, writeAnnotations } from "../../mcp/tool-support.js";
 import { decodeUpload, uploadContentTypes } from "../shared/upload.js";
-import { sanitizeBuild, sanitizeBuildSubmissions } from "./projection.js";
+import { sanitizeBuild, sanitizeBuildSubmissions, sanitizeSubmission } from "./projection.js";
 
 const uploadSchema = z.object({
   filename: z.string().trim().min(1).max(128),
@@ -33,6 +33,37 @@ export function registerBuildTools(server: McpServer, sdk: HoomiSdk, maxToolOutp
         const submissions = await sdk.builds.listSubmissions(entity_id, app_id, build_id);
         return {
           content: [{ type: "text" as const, text: serialize(sanitizeBuildSubmissions(submissions), maxToolOutputBytes) }]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
+
+  server.registerTool(
+    "hoomi_create_build_submission",
+    {
+      title: "Create a build submission",
+      description:
+        "Create a review submission for a Hoomi micro-app build. Partner members may submit an optional set of review images; only call after explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        build_id: z.number().int().positive().describe("Hoomi micro-app build ID."),
+        app_review: z.string().trim().min(1).max(5_000).describe("Message for the Hoomi review team."),
+        review_files: z.array(uploadSchema).max(10).default([]),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this submission.")
+      }),
+      annotations: writeAnnotations
+    },
+    async ({ entity_id, app_id, build_id, app_review, review_files }) => {
+      try {
+        const submission = await sdk.builds.createSubmission(entity_id, app_id, build_id, {
+          appReview: app_review,
+          reviewFiles: review_files.map(decodeUpload)
+        });
+        return {
+          content: [{ type: "text" as const, text: serialize(sanitizeSubmission(submission), maxToolOutputBytes) }]
         };
       } catch (error) {
         return toolFailure(error, maxToolOutputBytes);
