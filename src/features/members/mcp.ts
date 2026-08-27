@@ -50,4 +50,43 @@ export function registerMemberTools(server: McpServer, sdk: HoomiSdk, maxToolOut
       }
     }
   );
+
+  server.registerTool(
+    "hoomi_remove_app_member",
+    {
+      title: "Remove an app member",
+      description:
+        "Revoke one member's access to a Hoomi micro-app. member_id is the app-grant ID. This is destructive and requires explicit human confirmation.",
+      inputSchema: z.object({
+        entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
+        app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
+        member_id: z.number().int().positive().describe("Hoomi app-member grant ID, not the user ID."),
+        confirm: z.literal(true).describe("Must be true only after explicit human confirmation of this revocation.")
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false
+      }
+    },
+    async ({ entity_id, app_id, member_id }) => {
+      try {
+        const response = await sdk.members.removeAppMember(entity_id, app_id, member_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: serialize(
+                { removed: true, entity_id, app_id, member_id, message: response.message ?? "App member removed" },
+                maxToolOutputBytes
+              )
+            }
+          ]
+        };
+      } catch (error) {
+        return toolFailure(error, maxToolOutputBytes);
+      }
+    }
+  );
 }

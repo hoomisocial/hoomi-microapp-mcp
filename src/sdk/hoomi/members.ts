@@ -17,4 +17,10 @@ export class MembersSdk {
     );
     return unwrap<AppMember>(response);
   }
+
+  async removeAppMember(entityId: number, appId: number, memberId: number): Promise<ApiEnvelope<unknown>> {
+    return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
+      `/v2/partners/entity/${entityId}/apps/${appId}/members/${memberId}`
+    );
+  }
 }
