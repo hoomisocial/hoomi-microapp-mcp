@@ -55,6 +55,28 @@ test("maps an upstream 401 without exposing response internals", async () => {
   );
 });
 
+test("rejects a successful HTTP response with a failed Hoomi envelope", async () => {
+  const client = new HoomiApiClient({
+    baseUrl: "https://apidev.hoomi.social",
+    sessionToken: "validated-session-token",
+    timeoutMs: 10_000,
+    maxResponseBytes: 2_000_000,
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ success: false, message: "secret backend detail" }), { status: 200 })
+  });
+
+  await assert.rejects(
+    () => client.get("/v2/profile"),
+    (error: unknown) => {
+      assert.ok(error instanceof HoomiApiError);
+      assert.equal(error.code, "upstream_request_failed");
+      assert.equal(error.message, "Hoomi API rejected the request");
+      assert.equal(error.status, 200);
+      return true;
+    }
+  );
+});
+
 test("sends JSON POST bodies without retrying or following redirects", async () => {
   let requestedInit: RequestInit | undefined;
   const client = new HoomiApiClient({
@@ -117,5 +139,45 @@ test("rejects routes outside the Hoomi v2 allowlist", async () => {
   await assert.rejects(
     () => client.get("/admin/secrets"),
     (error: unknown) => error instanceof HoomiApiError && error.code === "route_not_allowed"
+    );
+});
+
+test("rejects an upstream URL with embedded credentials", () => {
+  assert.throws(
+    () =>
+      new HoomiApiClient({
+        baseUrl: "https://user:password@apidev.hoomi.social",
+        sessionToken: "validated-session-token",
+        timeoutMs: 10_000,
+        maxResponseBytes: 2_000_000
+      }),
+    /without credentials/
+  );
+});
+
+test("propagates caller cancellation to an in-flight upstream request", async () => {
+  const requestController = new AbortController();
+  const client = new HoomiApiClient({
+    baseUrl: "https://apidev.hoomi.social",
+    sessionToken: "validated-session-token",
+    timeoutMs: 10_000,
+    maxResponseBytes: 2_000_000,
+    requestSignal: requestController.signal,
+    fetchImpl: async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("The operation was aborted", "AbortError")),
+          { once: true }
+        );
+      })
+  });
+
+  const request = client.get("/v2/profile");
+  requestController.abort();
+
+  await assert.rejects(
+    request,
+    (error: unknown) => error instanceof HoomiApiError && error.code === "upstream_cancelled"
   );
 });

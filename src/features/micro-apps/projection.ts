@@ -1,4 +1,82 @@
-import type { Build, BuildSubmission, MicroApp, MicroAppDetail, Review, SubmissionLog } from "../../sdk/hoomi/index.js";
+import type {
+  Build,
+  BuildSubmission,
+  MicroApp,
+  MicroAppDetail,
+  MicroAppSummary,
+  Review,
+  SubmissionLog
+} from "../../sdk/hoomi/index.js";
+
+const microAppSummaryKeys = [
+  "id",
+  "app_id",
+  "app_bundle",
+  "app_name",
+  "app_type",
+  "app_category_id",
+  "app_category_name",
+  "status",
+  "updated_at"
+] as const;
+
+const microAppSearchKeys = [
+  "id",
+  "app_bundle",
+  "app_type",
+  "app_category_id",
+  "app_category_name",
+  "app_default_language",
+  "app_name",
+  "app_description",
+  "app_tagline",
+  "app_logo",
+  "marketing_url",
+  "app_version",
+  "app_lang",
+  "app_url",
+  "app_previews"
+] as const;
+
+const masterDataKeys = {
+  languages: ["id", "lang_name", "lang_short"],
+  categories: ["id", "category_name"],
+  countries: ["id", "country_name", "country_code"],
+  permissions: ["id", "permission_key"],
+  permissionStrings: ["id", "permission_id", "lang", "permission_name", "permission_description"]
+} as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function projectRecord(value: unknown, keys: readonly string[]): Record<string, unknown> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(keys.filter((key) => Object.hasOwn(value, key)).map((key) => [key, value[key]]));
+}
+
+function projectRecords(value: unknown, keys: readonly string[]): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item) => projectRecord(item, keys));
+}
+
+export function sanitizeMicroAppSummary(app: MicroAppSummary | undefined): Record<string, unknown> {
+  return projectRecord(app, microAppSummaryKeys);
+}
+
+export function sanitizeMicroAppSearchResults(value: unknown): Record<string, unknown>[] {
+  return projectRecords(value, microAppSearchKeys);
+}
+
+export function sanitizeMasterData(value: unknown, kind: keyof typeof masterDataKeys): Record<string, unknown>[] {
+  return projectRecords(value, masterDataKeys[kind]);
+}
 
 export function sanitizeMicroApp(app: MicroApp | undefined): Record<string, unknown> {
   return {

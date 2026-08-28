@@ -1,8 +1,12 @@
+import type { ApiEnvelope } from "./types.js";
+import { redactSensitiveText } from "../../security/redaction.js";
+
 export interface HoomiApiClientOptions {
   baseUrl: string;
   sessionToken?: string;
   timeoutMs: number;
   maxResponseBytes: number;
+  requestSignal?: AbortSignal;
   fetchImpl?: typeof fetch;
 }
 
@@ -28,17 +32,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function requireSuccessEnvelope<T>(value: unknown): ApiEnvelope<T> {
+  if (!isRecord(value) || value.success !== true) {
+    throw new HoomiApiError("invalid_upstream_response", "Hoomi API returned an invalid success response");
+  }
+
+  return value as ApiEnvelope<T>;
+}
+
 function errorMessage(value: unknown): string | null {
   if (!isRecord(value) || typeof value.message !== "string") {
     return null;
   }
 
-  return value.message.slice(0, 300);
+  return redactSensitiveText(value.message);
 }
 
 async function readBody(response: Response, maxBytes: number): Promise<string> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxBytes) {
+    if (response.body) {
+      await response.body.cancel().catch(() => undefined);
+    }
     throw new HoomiApiError("upstream_response_too_large", "Hoomi API response exceeded the configured size limit");
   }
 
@@ -49,6 +64,7 @@ async function readBody(response: Response, maxBytes: number): Promise<string> {
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
+  let shouldCancel = false;
 
   try {
     while (true) {
@@ -59,12 +75,19 @@ async function readBody(response: Response, maxBytes: number): Promise<string> {
 
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
+        shouldCancel = true;
         throw new HoomiApiError("upstream_response_too_large", "Hoomi API response exceeded the configured size limit");
       }
 
       chunks.push(value);
     }
+  } catch (error) {
+    shouldCancel = true;
+    throw error;
   } finally {
+    if (shouldCancel) {
+      await reader.cancel().catch(() => undefined);
+    }
     reader.releaseLock();
   }
 
@@ -96,6 +119,13 @@ export class HoomiApiClient {
 
   constructor(private readonly options: HoomiApiClientOptions) {
     this.baseUrl = new URL(options.baseUrl);
+    if (
+      this.baseUrl.username ||
+      this.baseUrl.password ||
+      !["http:", "https:"].includes(this.baseUrl.protocol)
+    ) {
+      throw new HoomiApiError("invalid_upstream_url", "Hoomi API base URL must be an HTTP(S) URL without credentials");
+    }
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -153,6 +183,9 @@ export class HoomiApiClient {
     }
 
     const url = new URL(path, this.baseUrl);
+    if (url.origin !== this.baseUrl.origin || !url.pathname.startsWith("/v2/")) {
+      throw new HoomiApiError("route_not_allowed", "Only Hoomi v2 API routes are allowed");
+    }
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) {
         url.searchParams.set(key, String(value));
@@ -173,6 +206,12 @@ export class HoomiApiClient {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs);
+    const abortRequest = (): void => controller.abort();
+    if (this.options.requestSignal?.aborted) {
+      abortRequest();
+    } else {
+      this.options.requestSignal?.addEventListener("abort", abortRequest, { once: true });
+    }
 
     try {
       const headers: Record<string, string> = {
@@ -205,6 +244,10 @@ export class HoomiApiClient {
         );
       }
 
+      if (isRecord(responseBody) && responseBody.success === false) {
+        throw new HoomiApiError("upstream_request_failed", "Hoomi API rejected the request", response.status);
+      }
+
       return responseBody as T;
     } catch (error) {
       if (error instanceof HoomiApiError) {
@@ -212,12 +255,17 @@ export class HoomiApiClient {
       }
 
       if (error instanceof DOMException && error.name === "AbortError") {
+        if (this.options.requestSignal?.aborted) {
+          throw new HoomiApiError("upstream_cancelled", "Hoomi API request was cancelled");
+        }
+
         throw new HoomiApiError("upstream_timeout", "Hoomi API request timed out");
       }
 
       throw new HoomiApiError("upstream_unavailable", "Hoomi API could not be reached");
     } finally {
       clearTimeout(timeout);
+      this.options.requestSignal?.removeEventListener("abort", abortRequest);
     }
   }
 }

@@ -55,6 +55,7 @@ export async function authenticateRequest(
     const { payload } = await jwtVerify(token, new TextEncoder().encode(config.hoomiJwtSecret), {
       algorithms: ["HS256"],
       issuer: config.hoomiJwtIssuer,
+      ...(config.hoomiJwtAudience ? { audience: config.hoomiJwtAudience } : {}),
       clockTolerance: 5
     });
 

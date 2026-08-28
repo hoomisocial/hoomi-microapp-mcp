@@ -7,6 +7,7 @@ import { registerBuildTools } from "./features/builds/mcp.js";
 import { registerMemberTools } from "./features/members/mcp.js";
 import { registerMicroAppTools } from "./features/micro-apps/mcp.js";
 import type { SecretHandoffStore } from "./secrets/handoff.js";
+import type { WriteApprovalStore } from "./secrets/write-approval.js";
 import { HoomiApiClient } from "./sdk/hoomi/client.js";
 import { HoomiSdk } from "./sdk/hoomi/index.js";
 
@@ -15,7 +16,9 @@ const SERVER_VERSION = "0.1.0";
 export function createMcpServer(
   principal: AuthenticatedPrincipal,
   config: AppConfig,
-  secretHandoffStore: SecretHandoffStore
+  secretHandoffStore: SecretHandoffStore,
+  writeApprovalStore: WriteApprovalStore,
+  requestSignal?: AbortSignal
 ): McpServer {
   const server = new McpServer({
     name: "hoomi-mcp",
@@ -27,7 +30,8 @@ export function createMcpServer(
         baseUrl: config.hoomiApiBaseUrl,
         sessionToken: principal.sessionToken,
         timeoutMs: config.hoomiRequestTimeoutMs,
-        maxResponseBytes: config.hoomiMaxResponseBytes
+        maxResponseBytes: config.hoomiMaxResponseBytes,
+        requestSignal
       })
     : undefined;
 
@@ -36,9 +40,10 @@ export function createMcpServer(
   registerMicroAppTools(server, sdk, config.maxToolOutputBytes, {
     config,
     principal,
-    store: secretHandoffStore
+    store: secretHandoffStore,
+    approvalStore: writeApprovalStore
   });
-  registerMemberTools(server, sdk, config.maxToolOutputBytes);
-  registerBuildTools(server, sdk, config.maxToolOutputBytes);
+  registerMemberTools(server, sdk, config.maxToolOutputBytes, principal, writeApprovalStore);
+  registerBuildTools(server, sdk, config.maxToolOutputBytes, principal, writeApprovalStore);
   return server;
 }

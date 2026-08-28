@@ -1,4 +1,4 @@
-import { HoomiApiClient, requireHoomiClient } from "./client.js";
+import { HoomiApiClient, requireHoomiClient, requireSuccessEnvelope } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
 import type {
@@ -156,9 +156,10 @@ export class MicroAppsSdk {
   }
 
   async delete(entityId: number, appId: number): Promise<ApiEnvelope<unknown>> {
-    return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
+    const response = await requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
       `/v2/partners/entity/${entityId}/apps/${appId}`
     );
+    return requireSuccessEnvelope(response);
   }
 
   async refreshSecret(entityId: number, appId: number): Promise<AppSecretRotation> {

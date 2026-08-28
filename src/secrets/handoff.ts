@@ -16,6 +16,7 @@ export interface SecretHandoffStore {
     expiresAt: string;
   }>;
   consume(userId: number, reference: string): Promise<SecretHandoffPayload | null>;
+  isReady(): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -112,7 +113,16 @@ export class MemorySecretHandoffStore implements SecretHandoffStore {
 
     this.entries.delete(key);
     clearTimeout(entry.timer);
+    const expiresAt = Date.parse(entry.payload.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+      return null;
+    }
+
     return entry.payload;
+  }
+
+  async isReady(): Promise<boolean> {
+    return true;
   }
 
   async close(): Promise<void> {
@@ -147,7 +157,30 @@ class RedisSecretHandoffStore implements SecretHandoffStore {
     }
 
     const encoded = await this.client.getDel(storageKey(userId, reference));
-    return encoded ? decodePayload(encoded, this.encryptionKey) : null;
+    if (!encoded) {
+      return null;
+    }
+
+    const payload = decodePayload(encoded, this.encryptionKey);
+    if (!payload) {
+      return null;
+    }
+
+    const expiresAt = Date.parse(payload.expiresAt);
+    return Number.isFinite(expiresAt) && expiresAt > Date.now() ? payload : null;
+  }
+
+  async isReady(): Promise<boolean> {
+    if (!this.client.isReady) {
+      return false;
+    }
+
+    try {
+      await this.client.ping();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async close(): Promise<void> {

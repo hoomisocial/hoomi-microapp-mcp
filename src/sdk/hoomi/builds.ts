@@ -1,4 +1,4 @@
-import { HoomiApiClient, requireHoomiClient } from "./client.js";
+import { HoomiApiClient, requireHoomiClient, requireSuccessEnvelope } from "./client.js";
 import { appendFile, appendRepeated, appendText } from "./form-data.js";
 import type { HoomiFormField } from "./client.js";
 import type { ApiEnvelope, Build, BuildSubmission, BuildSubmissions, HoomiFile } from "./types.js";
@@ -83,9 +83,10 @@ export class BuildsSdk {
   }
 
   async delete(entityId: number, appId: number, buildId: number): Promise<ApiEnvelope<unknown>> {
-    return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
+    const response = await requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
       `/v2/partners/entity/${entityId}/apps/${appId}/builds/${buildId}`
     );
+    return requireSuccessEnvelope(response);
   }
 
   async listSubmissions(entityId: number, appId: number, buildId: number): Promise<BuildSubmissions> {

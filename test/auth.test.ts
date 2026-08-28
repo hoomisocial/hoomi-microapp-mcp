@@ -15,13 +15,16 @@ const config: AppConfig = {
   authMode: "hoomi-session",
   hoomiJwtSecret: secret,
   hoomiJwtIssuer: "HOOMI-API",
+  hoomiJwtAudience: undefined,
   hoomiApiBaseUrl: "https://apidev.hoomi.social",
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
   maxToolOutputBytes: 200_000,
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
+  writeApprovalTtlSeconds: 120,
   secretHandoffPath: "/v1/secret-handoffs",
+  writeApprovalPath: "/v1/write-approvals",
   allowedHosts: ["127.0.0.1"],
   allowedOrigins: []
 };
@@ -59,6 +62,22 @@ test("rejects a token with the wrong issuer", async () => {
 
   await assert.rejects(
     () => authenticateRequest(`Bearer ${token}`, config),
+    (error: unknown) => error instanceof AuthenticationError
+  );
+});
+
+test("enforces the configured JWT audience when present", async () => {
+  const audienceConfig = { ...config, hoomiJwtAudience: "hoomi-mcp" };
+  const token = await new SignJWT({})
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("HOOMI-API")
+    .setAudience("another-service")
+    .setSubject("42")
+    .setExpirationTime("5 minutes")
+    .sign(new TextEncoder().encode(secret));
+
+  await assert.rejects(
+    () => authenticateRequest(`Bearer ${token}`, audienceConfig),
     (error: unknown) => error instanceof AuthenticationError
   );
 });

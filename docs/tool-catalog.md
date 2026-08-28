@@ -18,9 +18,9 @@ All tools run behind the authenticated `POST /mcp` endpoint. The request's Hoomi
 - `hoomi_get_micro_app_build` — a build projection without demo credentials
 - `hoomi_get_build_submissions` — review submissions and activity logs without reviewer identifiers
 
-## Confirmed Write Tools
+## Approved Write Tools
 
-The following tools require a literal `confirm: true` input and are annotated as non-read-only, non-idempotent actions. MCP host approval remains an independent required control. Delete tools are also marked destructive.
+The following tools require a fresh `approval_reference` issued by `POST /v1/write-approvals` after the MCP host shows the exact arguments to a human. Receipts are scoped to the authenticated user and argument hash, expire quickly, and are consumed once. Tools are annotated as non-read-only, non-idempotent actions. Delete tools are also marked destructive.
 
 - `hoomi_create_micro_app` — create a micro-app; the app secret is delivered only through a one-time handoff
 - `hoomi_update_micro_app` — update localized micro-app metadata and logos

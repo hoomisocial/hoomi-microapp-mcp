@@ -1,4 +1,4 @@
-import { HoomiApiClient, requireHoomiClient } from "./client.js";
+import { HoomiApiClient, requireHoomiClient, requireSuccessEnvelope } from "./client.js";
 import type { ApiEnvelope, AppMember } from "./types.js";
 import { unwrap } from "./types.js";
 
@@ -19,9 +19,10 @@ export class MembersSdk {
   }
 
   async removeAppMember(entityId: number, appId: number, memberId: number): Promise<ApiEnvelope<unknown>> {
-    return requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
+    const response = await requireHoomiClient(this.client).delete<ApiEnvelope<unknown>>(
       `/v2/partners/entity/${entityId}/apps/${appId}/members/${memberId}`
     );
+    return requireSuccessEnvelope(response);
   }
 
   async updateAppMemberRole(
