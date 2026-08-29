@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { createServer, type Server } from "node:http";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { SignJWT } from "jose";
 
@@ -23,6 +24,8 @@ const config: AppConfig = {
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
   maxToolOutputBytes: 200_000,
+  sdkSourceDir: fileURLToPath(new URL("./fixtures/sdk", import.meta.url)),
+  sdkRevision: "fixture-sdk-revision",
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
   writeApprovalTtlSeconds: 120,
@@ -77,7 +80,7 @@ function parseMcpResponse(rawBody: string): Record<string, unknown> {
   return JSON.parse(dataLine ? dataLine.slice("data: ".length) : rawBody) as Record<string, unknown>;
 }
 
-test("serves health and protects the MCP endpoint", async () => {
+test("serves health and keeps Hoomi operations protected", async () => {
   const store = new MemorySecretHandoffStore();
   const server = await listen(createApp(config, store, approvalStore));
   const address = server.address();
@@ -93,13 +96,59 @@ test("serves health and protects the MCP endpoint", async () => {
     assert.equal(readinessResponse.status, 200);
     assert.deepEqual(await readinessResponse.json(), { status: "ready", service: "hoomi-mcp" });
 
-    const unauthorizedResponse = await fetch(`${baseUrl}/mcp`, {
+    const anonymousResponse = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} })
+    });
+    assert.equal(anonymousResponse.status, 200);
+    const anonymousBody = parseMcpResponse(await anonymousResponse.text());
+    const anonymousTools = (anonymousBody.result as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name);
+    assert.deepEqual(anonymousTools, [
+      "hoomi_sdk_status",
+      "hoomi_sdk_search",
+      "hoomi_sdk_get_source",
+      "hoomi_sdk_get_api",
+      "hoomi_sdk_get_guidance",
+      "hoomi_sdk_get_example"
+    ]);
+
+    const sdkStatusResponse = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "hoomi_sdk_status", arguments: {} }
+      })
+    });
+    assert.equal(sdkStatusResponse.status, 200);
+    const sdkStatusBody = parseMcpResponse(await sdkStatusResponse.text());
+    const sdkStatusResult = sdkStatusBody.result as { content: Array<{ text: string }> };
+    assert.match(sdkStatusResult.content[0].text, /fixture-sdk-revision/);
+    assert.match(sdkStatusResult.content[0].text, /9\.9\.9-test/);
+
+    const hoomiToolResponse = await fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "hoomi_get_profile", arguments: {} }
+      })
+    });
+    assert.equal(hoomiToolResponse.status, 200);
+    const hoomiToolBody = parseMcpResponse(await hoomiToolResponse.text());
+    assert.equal("error" in hoomiToolBody, true);
+
+    const anonymousApprovalResponse = await fetch(`${baseUrl}/v1/write-approvals`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: "{}"
+      body: JSON.stringify({ tool: "hoomi_delete_micro_app", arguments: { entity_id: 1, app_id: 2 } })
     });
-    assert.equal(unauthorizedResponse.status, 401);
-    assert.match(unauthorizedResponse.headers.get("www-authenticate") ?? "", /Bearer/);
+    assert.equal(anonymousApprovalResponse.status, 401);
   } finally {
     await close(server);
     await store.close();

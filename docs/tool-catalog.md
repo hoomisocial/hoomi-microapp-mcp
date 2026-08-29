@@ -1,8 +1,19 @@
 # MCP Tool Catalog
 
-All tools run behind the authenticated `POST /mcp` endpoint. The request's Hoomi session JWT is verified before a tool is dispatched. Tool handlers use a server-owned Hoomi API client; models never supply URLs, authorization headers, cookies, or credentials.
+The `POST /mcp` endpoint serves two trust boundaries. The six `hoomi_sdk_*` tools are read-only documentation tools and are available without a bearer token. Hoomi tools are registered only for requests with a valid Hoomi session JWT. Tool handlers use a server-owned Hoomi API client; models never supply URLs, authorization headers, cookies, or credentials.
 
-## Read Tools
+## SDK Documentation Tools
+
+These tools read a fixed, deployment-controlled SDK source snapshot. The snapshot must contain public documentation and source only; it is never written, fetched, built, or refreshed by an MCP call.
+
+- `hoomi_sdk_status` — SDK revision, package metadata, entrypoints, and namespaces
+- `hoomi_sdk_search` — bounded search across SDK documentation and source
+- `hoomi_sdk_get_source` — read an exact SDK source file or line range
+- `hoomi_sdk_get_api` — source-backed namespace interface and type definitions
+- `hoomi_sdk_get_guidance` — source-backed implementation guidance
+- `hoomi_sdk_get_example` — canonical SDK examples
+
+## Authenticated Hoomi Read Tools
 
 - `hoomi_get_profile` — basic authenticated profile projection
 - `hoomi_list_workspaces` — the user's partner workspaces

@@ -1,0 +1,8 @@
+{
+  "name": "@hoomisocial/microapps-sdk-js",
+  "version": "9.9.9-test",
+  "type": "module",
+  "exports": {
+    ".": "./src/hoomi.ts"
+  }
+}

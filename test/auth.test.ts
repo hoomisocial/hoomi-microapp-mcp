@@ -20,6 +20,8 @@ const config: AppConfig = {
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
   maxToolOutputBytes: 200_000,
+  sdkSourceDir: "/opt/hoomi-sdk-source",
+  sdkRevision: undefined,
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
   writeApprovalTtlSeconds: 120,

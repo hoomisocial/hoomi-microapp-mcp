@@ -6,6 +6,8 @@ import { registerAccountTools } from "./features/account/mcp.js";
 import { registerBuildTools } from "./features/builds/mcp.js";
 import { registerMemberTools } from "./features/members/mcp.js";
 import { registerMicroAppTools } from "./features/micro-apps/mcp.js";
+import { registerSdkTools } from "./features/sdk/mcp.js";
+import { SdkSource } from "./features/sdk/source.js";
 import type { SecretHandoffStore } from "./secrets/handoff.js";
 import type { WriteApprovalStore } from "./secrets/write-approval.js";
 import { HoomiApiClient } from "./sdk/hoomi/client.js";
@@ -18,22 +20,31 @@ export function createMcpServer(
   config: AppConfig,
   secretHandoffStore: SecretHandoffStore,
   writeApprovalStore: WriteApprovalStore,
-  requestSignal?: AbortSignal
+  requestSignal?: AbortSignal,
+  sdkSource = new SdkSource({ rootDirectory: config.sdkSourceDir, revision: config.sdkRevision })
 ): McpServer {
   const server = new McpServer({
     name: "hoomi-mcp",
     version: SERVER_VERSION
   });
 
-  const hoomiClient = principal.sessionToken
-    ? new HoomiApiClient({
-        baseUrl: config.hoomiApiBaseUrl,
-        sessionToken: principal.sessionToken,
-        timeoutMs: config.hoomiRequestTimeoutMs,
-        maxResponseBytes: config.hoomiMaxResponseBytes,
-        requestSignal
-      })
-    : undefined;
+  registerSdkTools(
+    server,
+    sdkSource,
+    config.maxToolOutputBytes
+  );
+
+  if (!principal.sessionToken) {
+    return server;
+  }
+
+  const hoomiClient = new HoomiApiClient({
+    baseUrl: config.hoomiApiBaseUrl,
+    sessionToken: principal.sessionToken,
+    timeoutMs: config.hoomiRequestTimeoutMs,
+    maxResponseBytes: config.hoomiMaxResponseBytes,
+    requestSignal
+  });
 
   const sdk = new HoomiSdk(hoomiClient);
   registerAccountTools(server, sdk, config.maxToolOutputBytes);

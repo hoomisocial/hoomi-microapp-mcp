@@ -17,6 +17,8 @@ const envSchema = z.object({
   HOOMI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
   HOOMI_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1_024).max(10_000_000).default(2_000_000),
   MCP_MAX_TOOL_OUTPUT_BYTES: z.coerce.number().int().min(1_024).max(1_000_000).default(200_000),
+  HOOMI_SDK_SOURCE_DIR: z.string().trim().min(1).default("/opt/hoomi-sdk-source"),
+  HOOMI_SDK_REVISION: z.string().trim().min(1).max(200).optional(),
   SECRET_HANDOFF_STORE: z.enum(["redis", "memory"]).default("redis"),
   REDIS_URL: z.string().url().optional(),
   SECRET_HANDOFF_TTL_SECONDS: z.coerce.number().int().min(30).max(900).default(300),
@@ -52,6 +54,8 @@ export interface AppConfig {
   hoomiRequestTimeoutMs: number;
   hoomiMaxResponseBytes: number;
   maxToolOutputBytes: number;
+  sdkSourceDir: string;
+  sdkRevision?: string;
   secretHandoffStore: "redis" | "memory";
   redisUrl?: string;
   secretHandoffTtlSeconds: number;
@@ -165,6 +169,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     hoomiRequestTimeoutMs: parsed.HOOMI_REQUEST_TIMEOUT_MS,
     hoomiMaxResponseBytes: parsed.HOOMI_MAX_RESPONSE_BYTES,
     maxToolOutputBytes: parsed.MCP_MAX_TOOL_OUTPUT_BYTES,
+    sdkSourceDir: parsed.HOOMI_SDK_SOURCE_DIR,
+    sdkRevision: parsed.HOOMI_SDK_REVISION,
     secretHandoffStore: parsed.SECRET_HANDOFF_STORE,
     redisUrl: parsed.REDIS_URL,
     secretHandoffTtlSeconds: parsed.SECRET_HANDOFF_TTL_SECONDS,

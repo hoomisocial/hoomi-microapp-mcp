@@ -11,11 +11,13 @@ The foundation exposes:
 - `POST /mcp` using MCP Streamable HTTP in stateless mode
 - `POST /v1/write-approvals` for short-lived, argument-bound write-approval receipts
 
-Typed, allowlisted tools are available through the MCP endpoint for profile/workspaces, micro-app discovery and CRUD, app members, builds, build submissions, and build lifecycle actions. Mutations require a fresh approval receipt issued after a client shows the exact arguments to a human; the boolean `confirm` flag is not trusted. App secrets are delivered only through a one-time authenticated handoff and are never returned as tool output.
+The MCP endpoint exposes six read-only `hoomi_sdk_*` documentation tools without a bearer token. A request with a valid Hoomi session also receives the authenticated Hoomi tools for profile/workspaces, micro-app discovery and CRUD, app members, builds, build submissions, and build lifecycle actions. Mutations require a fresh approval receipt issued after a client shows the exact arguments to a human; the boolean `confirm` flag is not trusted. App secrets are delivered only through a one-time authenticated handoff and are never returned as tool output.
+
+SDK tools read only the fixed directory configured by `HOOMI_SDK_SOURCE_DIR`. The directory must be a public-safe, read-only SDK snapshot; it is never fetched, written, installed, or built by this service. Set `HOOMI_SDK_REVISION` to report the immutable snapshot revision in `hoomi_sdk_status`. The snapshot must be mounted or baked at deployment time; `/readyz` stays unavailable until it exists.
 
 ## Authentication
 
-Production uses the existing Hoomi session JWT:
+Hoomi tools and the write-approval and secret-handoff endpoints use the existing Hoomi session JWT:
 
 ```http
 Authorization: Bearer <session_token>
@@ -39,7 +41,7 @@ npm test
 npm run dev
 ```
 
-For an unauthenticated local smoke test only, set both values explicitly:
+For a local unauthenticated SDK-only smoke test, no auth setting is required. The following mode is still available for local Hoomi wiring tests, but it exposes no Hoomi tools because no upstream bearer is available:
 
 ```text
 MCP_AUTH_MODE=disabled
@@ -51,7 +53,7 @@ Never use that mode in Docker production or a shared environment.
 
 ## Docker
 
-The service listens on port `8300` and the compose file maps host port `8300` to container port `8300`. Production requires an explicit `HOOMI_API_BASE_URL` using HTTPS, Redis-backed handoffs/approvals, and both encryption/JWT secrets from a secret manager.
+The service listens on port `8300` and the compose file maps host port `8300` to container port `8300`. Production requires an explicit `HOOMI_API_BASE_URL` using HTTPS, Redis-backed handoffs/approvals, both encryption/JWT secrets from a secret manager, and a public-safe SDK snapshot mounted at `/opt/hoomi-sdk-source` or another `HOOMI_SDK_SOURCE_DIR`.
 
 ```powershell
 Copy-Item .env.example .env
@@ -67,7 +69,8 @@ The container runs as the non-root `node` user, drops Linux capabilities, uses a
 - The transport is stateless so instances can scale horizontally without an in-memory session store.
 - Host validation is delegated to the official MCP Express helper and configured through `MCP_ALLOWED_HOSTS`.
 - Browser origins must be explicitly listed in `MCP_ALLOWED_ORIGINS`; wildcard origins are rejected.
+- SDK documentation tools are read-only and tokenless by design; keep `HOOMI_SDK_SOURCE_DIR` limited to a public-safe source snapshot.
 - Authorization values, cookies, request bodies containing secrets, and JWT library details are not logged. Secret and approval references are redacted from request paths in logs.
 - Tools must not accept model-controlled arbitrary URLs, headers, or credentials.
 - Upstream calls are restricted to `/v2/` Hoomi routes, use a timeout and response-size cap, reject redirects, require an HTTPS production base URL, and forward only the validated session bearer.
-- Production readiness includes Redis availability; the container health check uses `/readyz`, not only process liveness.
+- Production readiness includes Redis and the SDK snapshot; the container health check uses `/readyz`, not only process liveness.

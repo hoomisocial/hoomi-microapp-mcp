@@ -6,7 +6,12 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import helmet from "helmet";
 import { z } from "zod";
 
-import { authenticateRequest, AuthenticationError, type AuthenticatedPrincipal } from "./auth.js";
+import {
+  authenticateOptionalRequest,
+  authenticateRequest,
+  AuthenticationError,
+  type AuthenticatedPrincipal
+} from "./auth.js";
 import type { AppConfig } from "./config.js";
 import { createMcpServer } from "./mcp.js";
 import type { SecretHandoffStore } from "./secrets/handoff.js";
@@ -17,6 +22,7 @@ import {
   normalizeWriteApprovalArguments,
   type WriteApprovalStore
 } from "./secrets/write-approval.js";
+import { SdkSource } from "./features/sdk/source.js";
 
 const writeApprovalRequestSchema = z
   .object({
@@ -107,6 +113,23 @@ function authenticationMiddleware(config: AppConfig) {
   };
 }
 
+function optionalAuthenticationMiddleware(config: AppConfig) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      res.locals.auth = await authenticateOptionalRequest(req.get("authorization"), config);
+      next();
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        res.setHeader("WWW-Authenticate", 'Bearer realm="hoomi-mcp", error="invalid_token"');
+        res.status(401).json({ error: error.code, request_id: res.locals.requestId });
+        return;
+      }
+
+      next(error);
+    }
+  };
+}
+
 async function handleMcpRequest(req: Request, res: Response, next: NextFunction): Promise<void> {
   const principal = res.locals.auth;
   if (!principal) {
@@ -131,7 +154,8 @@ async function handleMcpRequest(req: Request, res: Response, next: NextFunction)
       req.app.locals.config,
       req.app.locals.secretHandoffStore,
       req.app.locals.writeApprovalStore,
-      requestAbortController.signal
+      requestAbortController.signal,
+      req.app.locals.sdkSource
     );
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.setHeader("Cache-Control", "no-store");
@@ -268,9 +292,11 @@ export function createApp(
   writeApprovalStore: WriteApprovalStore
 ): Express {
   const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
+  const sdkSource = new SdkSource({ rootDirectory: config.sdkSourceDir, revision: config.sdkRevision });
   app.locals.config = config;
   app.locals.secretHandoffStore = secretHandoffStore;
   app.locals.writeApprovalStore = writeApprovalStore;
+  app.locals.sdkSource = sdkSource;
 
   app.disable("x-powered-by");
   app.set("trust proxy", false);
@@ -282,9 +308,9 @@ export function createApp(
   });
 
   app.get("/readyz", (_req, res, next) => {
-    void Promise.all([secretHandoffStore.isReady(), writeApprovalStore.isReady()])
-      .then(([handoffReady, approvalReady]) => {
-        if (!handoffReady || !approvalReady) {
+    void Promise.all([secretHandoffStore.isReady(), writeApprovalStore.isReady(), sdkSource.isReady()])
+      .then(([handoffReady, approvalReady, sdkReady]) => {
+        if (!handoffReady || !approvalReady || !sdkReady) {
           res.status(503).json({ status: "not_ready", service: "hoomi-mcp" });
           return;
         }
@@ -295,7 +321,7 @@ export function createApp(
   });
 
   app.use(config.mcpPath, originPolicy(config));
-  app.use(config.mcpPath, authenticationMiddleware(config));
+  app.use(config.mcpPath, optionalAuthenticationMiddleware(config));
   app.use(express.json({ limit: "8mb", type: ["application/json", "application/*+json"] }));
   app.post(config.mcpPath, (req, res, next) => {
     void handleMcpRequest(req, res, next);

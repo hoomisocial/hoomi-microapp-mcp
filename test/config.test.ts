@@ -20,6 +20,7 @@ test("loads secure Hoomi defaults with explicit runtime values", () => {
   assert.deepEqual(config.allowedHosts, ["mcp.hoomi.social", "localhost"]);
   assert.deepEqual(config.allowedOrigins, ["https://app.hoomi.social"]);
   assert.equal(config.hoomiApiBaseUrl, "https://api.hoomi.social");
+  assert.equal(config.sdkSourceDir, "/opt/hoomi-sdk-source");
 });
 
 test("requires an explicit HTTPS upstream in production", () => {

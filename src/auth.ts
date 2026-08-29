@@ -7,7 +7,7 @@ export interface AuthenticatedPrincipal {
   issuer: string | null;
   expiresAt: Date | null;
   sessionToken?: string;
-  mode: "hoomi-session" | "disabled";
+  mode: "hoomi-session" | "disabled" | "anonymous";
 }
 
 export class AuthenticationError extends Error {
@@ -30,6 +30,26 @@ function extractBearerToken(authorizationHeader: string | undefined): string {
   }
 
   return match[1];
+}
+
+export function anonymousPrincipal(): AuthenticatedPrincipal {
+  return {
+    userId: null,
+    issuer: null,
+    expiresAt: null,
+    mode: "anonymous"
+  };
+}
+
+export async function authenticateOptionalRequest(
+  authorizationHeader: string | undefined,
+  config: AppConfig
+): Promise<AuthenticatedPrincipal> {
+  if (!authorizationHeader) {
+    return anonymousPrincipal();
+  }
+
+  return authenticateRequest(authorizationHeader, config);
 }
 
 export async function authenticateRequest(
