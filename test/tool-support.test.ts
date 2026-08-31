@@ -33,3 +33,22 @@ test("redacts credentials from upstream tool errors", () => {
   assert.equal(text.includes("access-value"), false);
   assert.equal(text.includes("[redacted]"), true);
 });
+
+test("redacts credentials from successful serialized tool output", () => {
+  const text = serialize(
+    {
+      app_secret: "dummy-secret",
+      callback_url: "https://example.test/callback?token=dummy-token&sig=dummy-signature",
+      review: "password=dummy-password",
+      accessToken: "dummy-access-token"
+    },
+    2_000
+  );
+
+  assert.equal(text.includes("dummy-secret"), false);
+  assert.equal(text.includes("dummy-token"), false);
+  assert.equal(text.includes("dummy-signature"), false);
+  assert.equal(text.includes("dummy-password"), false);
+  assert.equal(text.includes("dummy-access-token"), false);
+  assert.equal(text.includes("[redacted]"), true);
+});

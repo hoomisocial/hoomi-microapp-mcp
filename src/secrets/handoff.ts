@@ -31,7 +31,7 @@ function deriveEncryptionKey(secret: string): Buffer {
   return createHash("sha256").update(secret).digest();
 }
 
-function encodePayload(payload: SecretHandoffPayload, encryptionKey?: Buffer): string {
+function encodePayload(payload: SecretHandoffPayload, encryptionKey: Buffer | undefined, associatedData: Buffer): string {
   const plaintext = Buffer.from(JSON.stringify(payload), "utf8");
   if (!encryptionKey) {
     return `plain.${plaintext.toString("base64url")}`;
@@ -39,21 +39,27 @@ function encodePayload(payload: SecretHandoffPayload, encryptionKey?: Buffer): s
 
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv);
+  cipher.setAAD(associatedData);
   const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return ["v1", iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
+  return ["v2", iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
 }
 
-function decodePayload(encoded: string, encryptionKey?: Buffer): SecretHandoffPayload | null {
+function decodePayload(
+  encoded: string,
+  encryptionKey: Buffer | undefined,
+  associatedData: Buffer
+): SecretHandoffPayload | null {
   try {
     const parts = encoded.split(".");
     let plaintext: Buffer;
 
     if (parts[0] === "plain" && parts.length === 2 && !encryptionKey) {
       plaintext = Buffer.from(parts[1], "base64url");
-    } else if (parts[0] === "v1" && parts.length === 4 && encryptionKey) {
+    } else if (parts[0] === "v2" && parts.length === 4 && encryptionKey) {
       const decipher = createDecipheriv("aes-256-gcm", encryptionKey, Buffer.from(parts[1], "base64url"));
       decipher.setAuthTag(Buffer.from(parts[2], "base64url"));
+      decipher.setAAD(associatedData);
       plaintext = Buffer.concat([
         decipher.update(Buffer.from(parts[3], "base64url")),
         decipher.final()
@@ -133,7 +139,7 @@ export class MemorySecretHandoffStore implements SecretHandoffStore {
   }
 }
 
-class RedisSecretHandoffStore implements SecretHandoffStore {
+export class RedisSecretHandoffStore implements SecretHandoffStore {
   constructor(
     private readonly client: RedisClientType,
     private readonly encryptionKey?: Buffer
@@ -142,8 +148,13 @@ class RedisSecretHandoffStore implements SecretHandoffStore {
   async create(userId: number, appId: number, appSecret: string, ttlSeconds: number) {
     const reference = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-    const payload = encodePayload({ appId, appSecret, expiresAt }, this.encryptionKey);
-    const result = await this.client.set(storageKey(userId, reference), payload, { EX: ttlSeconds, NX: true });
+    const key = storageKey(userId, reference);
+    const payload = encodePayload(
+      { appId, appSecret, expiresAt },
+      this.encryptionKey,
+      Buffer.from(key, "utf8")
+    );
+    const result = await this.client.set(key, payload, { EX: ttlSeconds, NX: true });
     if (result !== "OK") {
       throw new Error("secret handoff reference collision");
     }
@@ -156,12 +167,13 @@ class RedisSecretHandoffStore implements SecretHandoffStore {
       return null;
     }
 
-    const encoded = await this.client.getDel(storageKey(userId, reference));
+    const key = storageKey(userId, reference);
+    const encoded = await this.client.getDel(key);
     if (!encoded) {
       return null;
     }
 
-    const payload = decodePayload(encoded, this.encryptionKey);
+    const payload = decodePayload(encoded, this.encryptionKey, Buffer.from(key, "utf8"));
     if (!payload) {
       return null;
     }

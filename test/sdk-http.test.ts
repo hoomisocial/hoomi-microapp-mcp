@@ -23,6 +23,7 @@ const config: AppConfig = {
   maxToolOutputBytes: 200_000,
   sdkSourceDir: fileURLToPath(new URL("./fixtures/sdk", import.meta.url)),
   sdkRevision: "fixture-sdk-revision",
+  sdkSourceDigest: undefined,
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
   writeApprovalTtlSeconds: 120,
@@ -119,6 +120,26 @@ test("calls every SDK tool over HTTP without a bearer token", async () => {
     const exampleResult = example.result as { content: Array<{ text: string }>; isError?: boolean };
     assert.equal(exampleResult.isError, undefined);
     assert.match((JSON.parse(exampleResult.content[0].text) as { text: string }).text, /getHoomi/);
+  } finally {
+    await close(server);
+    await handoffStore.close();
+    await approvalStore.close();
+  }
+});
+
+test("keeps readiness unavailable when the SDK digest does not match", async () => {
+  const handoffStore = new MemorySecretHandoffStore();
+  const approvalStore = new MemoryWriteApprovalStore();
+  const server = await listen(
+    createApp({ ...config, sdkSourceDigest: "0".repeat(64) }, handoffStore, approvalStore)
+  );
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/readyz`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { status: "not_ready", service: "hoomi-mcp" });
   } finally {
     await close(server);
     await handoffStore.close();

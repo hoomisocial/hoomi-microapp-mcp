@@ -8,7 +8,7 @@ import {
 import { redactSensitiveText } from "../security/redaction.js";
 
 export function serialize(value: unknown, maxBytes: number): string {
-  const text = JSON.stringify(value, null, 2) ?? "null";
+  const text = redactSensitiveText(JSON.stringify(value, null, 2) ?? "null", Number.MAX_SAFE_INTEGER);
   return Buffer.byteLength(text, "utf8") <= maxBytes
     ? text
     : JSON.stringify({

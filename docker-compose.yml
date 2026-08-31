@@ -28,7 +28,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8300:8300"
+      - "127.0.0.1:8300:8300"
     read_only: true
     tmpfs:
       - /tmp

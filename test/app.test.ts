@@ -26,6 +26,7 @@ const config: AppConfig = {
   maxToolOutputBytes: 200_000,
   sdkSourceDir: fileURLToPath(new URL("./fixtures/sdk", import.meta.url)),
   sdkRevision: "fixture-sdk-revision",
+  sdkSourceDigest: undefined,
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
   writeApprovalTtlSeconds: 120,
@@ -149,6 +150,51 @@ test("serves health and keeps Hoomi operations protected", async () => {
       body: JSON.stringify({ tool: "hoomi_delete_micro_app", arguments: { entity_id: 1, app_id: 2 } })
     });
     assert.equal(anonymousApprovalResponse.status, 401);
+  } finally {
+    await close(server);
+    await store.close();
+  }
+});
+
+test("generates a server-owned request ID", async () => {
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store, approvalStore));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const suppliedId = "eyJ.fake.signature";
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/healthz`, {
+      headers: { "x-request-id": suppliedId }
+    });
+    const requestId = response.headers.get("x-request-id");
+    assert.equal(response.status, 200);
+    assert.notEqual(requestId, suppliedId);
+    assert.match(requestId ?? "", /^[0-9a-f-]{36}$/);
+  } finally {
+    await close(server);
+    await store.close();
+  }
+});
+
+test("accepts MCP JSON bodies above the Express default limit", async () => {
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store, approvalStore));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/mcp`, {
+      method: "POST",
+      headers: { accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/list",
+        params: { padding: "x".repeat(150_000) }
+      })
+    });
+    assert.notEqual(response.status, 413);
   } finally {
     await close(server);
     await store.close();

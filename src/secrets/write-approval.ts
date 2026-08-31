@@ -19,6 +19,7 @@ export interface WriteApprovalStore {
 const keyPrefix = "hoomi-mcp:write-approval";
 export const writeApprovalReferencePattern = /^[a-f0-9]{64}$/;
 const argumentsHashPattern = /^[a-f0-9]{64}$/;
+const MAX_ARGUMENT_DEPTH = 20;
 const writeToolArgumentKeys: Record<string, readonly string[]> = {
   hoomi_create_micro_app: [
     "entity_id",
@@ -113,9 +114,23 @@ function storageKey(userId: number, reference: string): string {
   return `${keyPrefix}:${userId}:${reference}`;
 }
 
-function canonicalize(value: unknown): unknown {
+export class WriteApprovalArgumentsError extends Error {
+  constructor() {
+    super("write approval arguments exceed the maximum nesting depth");
+    this.name = "WriteApprovalArgumentsError";
+  }
+}
+
+function assertArgumentDepth(depth: number): void {
+  if (depth > MAX_ARGUMENT_DEPTH) {
+    throw new WriteApprovalArgumentsError();
+  }
+}
+
+function canonicalize(value: unknown, depth = 0): unknown {
+  assertArgumentDepth(depth);
   if (Array.isArray(value)) {
-    return value.map(canonicalize);
+    return value.map((item) => canonicalize(item, depth + 1));
   }
 
   if (typeof value === "object" && value !== null) {
@@ -123,16 +138,17 @@ function canonicalize(value: unknown): unknown {
     return Object.fromEntries(
       Object.keys(record)
         .sort()
-        .map((key) => [key, canonicalize(record[key])])
+        .map((key) => [key, canonicalize(record[key], depth + 1)])
     );
   }
 
   return value;
 }
 
-function normalizeValue(value: unknown): unknown {
+function normalizeValue(value: unknown, depth = 0): unknown {
+  assertArgumentDepth(depth);
   if (Array.isArray(value)) {
-    return value.map(normalizeValue);
+    return value.map((item) => normalizeValue(item, depth + 1));
   }
 
   if (typeof value === "string") {
@@ -140,51 +156,58 @@ function normalizeValue(value: unknown): unknown {
   }
 
   if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, normalizeValue(nested)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nested]) => [key, normalizeValue(nested, depth + 1)])
+    );
   }
 
   return value;
 }
 
-function normalizeUpload(value: unknown): unknown {
+function normalizeUpload(value: unknown, depth = 0): unknown {
+  assertArgumentDepth(depth);
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return normalizeValue(value);
+    return normalizeValue(value, depth);
   }
 
   const upload = value as Record<string, unknown>;
   return {
-    filename: normalizeValue(upload.filename),
-    content_type: normalizeValue(upload.content_type),
-    data_base64: normalizeValue(upload.data_base64)
+    filename: normalizeValue(upload.filename, depth + 1),
+    content_type: normalizeValue(upload.content_type, depth + 1),
+    data_base64: normalizeValue(upload.data_base64, depth + 1)
   };
 }
 
-function normalizeArgument(key: string, value: unknown): unknown {
+function normalizeArgument(key: string, value: unknown, depth = 0): unknown {
+  assertArgumentDepth(depth);
   if (key === "app_logo") {
-    return normalizeUpload(value);
+    return normalizeUpload(value, depth + 1);
   }
 
   if (key === "app_previews" || key === "review_files") {
-    return Array.isArray(value) ? value.map(normalizeUpload) : normalizeValue(value);
+    return Array.isArray(value)
+      ? value.map((item) => normalizeUpload(item, depth + 1))
+      : normalizeValue(value, depth + 1);
   }
 
   if (key === "localized_logos") {
     return Array.isArray(value)
       ? value.map((item) => {
+          assertArgumentDepth(depth + 1);
           if (typeof item !== "object" || item === null || Array.isArray(item)) {
-            return normalizeValue(item);
+            return normalizeValue(item, depth + 1);
           }
 
           const logo = item as Record<string, unknown>;
           return {
-            language: normalizeValue(logo.language),
-            file: normalizeUpload(logo.file)
+            language: normalizeValue(logo.language, depth + 2),
+            file: normalizeUpload(logo.file, depth + 2)
           };
         })
-      : normalizeValue(value);
+      : normalizeValue(value, depth + 1);
   }
 
-  return normalizeValue(value);
+  return normalizeValue(value, depth + 1);
 }
 
 export function hasOnlyWriteToolArguments(toolName: string, value: Record<string, unknown>): boolean {

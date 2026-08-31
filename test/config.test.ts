@@ -7,6 +7,8 @@ test("loads secure Hoomi defaults with explicit runtime values", () => {
   const config = loadConfig({
     NODE_ENV: "production",
     HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+    HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+    HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
     HOOMI_API_BASE_URL: "https://api.hoomi.social",
     SECRET_HANDOFF_STORE: "redis",
     REDIS_URL: "redis://:test-password@localhost:6379",
@@ -21,6 +23,7 @@ test("loads secure Hoomi defaults with explicit runtime values", () => {
   assert.deepEqual(config.allowedOrigins, ["https://app.hoomi.social"]);
   assert.equal(config.hoomiApiBaseUrl, "https://api.hoomi.social");
   assert.equal(config.sdkSourceDir, "/opt/hoomi-sdk-source");
+  assert.equal(config.sdkSourceDigest, "a".repeat(64));
 });
 
 test("requires an explicit HTTPS upstream in production", () => {
@@ -29,6 +32,8 @@ test("requires an explicit HTTPS upstream in production", () => {
       loadConfig({
         NODE_ENV: "production",
         HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+        HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+        HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
         SECRET_HANDOFF_STORE: "redis",
         REDIS_URL: "redis://:test-password@localhost:6379",
         SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough"
@@ -41,6 +46,8 @@ test("requires an explicit HTTPS upstream in production", () => {
       loadConfig({
         NODE_ENV: "production",
         HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+        HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+        HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
         HOOMI_API_BASE_URL: "http://api.hoomi.social",
         SECRET_HANDOFF_STORE: "redis",
         REDIS_URL: "redis://:test-password@localhost:6379",
@@ -57,6 +64,8 @@ test("rejects insecure auth in production", () => {
         NODE_ENV: "production",
         MCP_AUTH_MODE: "disabled",
         ALLOW_INSECURE_LOCAL: "true",
+        HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+        HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
         SECRET_HANDOFF_STORE: "redis",
         REDIS_URL: "redis://:test-password@localhost:6379",
         SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough"
@@ -78,6 +87,8 @@ test("rejects overlapping MCP auxiliary paths", () => {
       loadConfig({
         NODE_ENV: "production",
         HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+        HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+        HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
         HOOMI_API_BASE_URL: "https://api.hoomi.social",
         SECRET_HANDOFF_STORE: "redis",
         REDIS_URL: "redis://:test-password@localhost:6379",
@@ -85,5 +96,37 @@ test("rejects overlapping MCP auxiliary paths", () => {
         WRITE_APPROVAL_PATH: "/mcp/approval"
       }),
     /paths must not overlap/
+  );
+});
+
+test("requires a JWT audience in production", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: "production",
+        HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+        HOOMI_API_BASE_URL: "https://api.hoomi.social",
+        HOOMI_SDK_SOURCE_DIGEST: "a".repeat(64),
+        SECRET_HANDOFF_STORE: "redis",
+        REDIS_URL: "redis://:test-password@localhost:6379",
+        SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough"
+      }),
+    /HOOMI_JWT_AUDIENCE is required in production/
+  );
+});
+
+test("requires an SDK source digest in production", () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: "production",
+        HOOMI_JWT_SECRET: "a-secure-production-secret-that-is-long-enough",
+        HOOMI_JWT_AUDIENCE: "hoomi-mcp",
+        HOOMI_API_BASE_URL: "https://api.hoomi.social",
+        SECRET_HANDOFF_STORE: "redis",
+        REDIS_URL: "redis://:test-password@localhost:6379",
+        SECRET_HANDOFF_ENCRYPTION_KEY: "a-secure-secret-handoff-key-that-is-long-enough"
+      }),
+    /HOOMI_SDK_SOURCE_DIGEST is required in production/
   );
 });

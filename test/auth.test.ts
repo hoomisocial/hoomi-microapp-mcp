@@ -22,6 +22,7 @@ const config: AppConfig = {
   maxToolOutputBytes: 200_000,
   sdkSourceDir: "/opt/hoomi-sdk-source",
   sdkRevision: undefined,
+  sdkSourceDigest: undefined,
   secretHandoffStore: "memory",
   secretHandoffTtlSeconds: 300,
   writeApprovalTtlSeconds: 120,

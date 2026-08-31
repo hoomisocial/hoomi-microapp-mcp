@@ -20,6 +20,7 @@ import {
   hasOnlyWriteToolArguments,
   isWriteToolName,
   normalizeWriteApprovalArguments,
+  WriteApprovalArgumentsError,
   type WriteApprovalStore
 } from "./secrets/write-approval.js";
 import { SdkSource } from "./features/sdk/source.js";
@@ -44,8 +45,7 @@ function loggedPath(req: Request): string {
 }
 
 function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const suppliedId = req.get("x-request-id");
-  const requestId = suppliedId && /^[A-Za-z0-9._:-]{1,128}$/.test(suppliedId) ? suppliedId : randomUUID();
+  const requestId = randomUUID();
   const startedAt = performance.now();
 
   res.locals.requestId = requestId;
@@ -205,14 +205,19 @@ async function createWriteApproval(
   }
 
   try {
+    const normalizedArguments = normalizeWriteApprovalArguments(parsed.data.tool, parsed.data.arguments);
     const approval = await store.create(
       principal.userId,
       parsed.data.tool,
-      hashWriteApprovalArguments(normalizeWriteApprovalArguments(parsed.data.tool, parsed.data.arguments)),
+      hashWriteApprovalArguments(normalizedArguments),
       config.writeApprovalTtlSeconds
     );
     res.status(201).json({ reference: approval.reference, expires_at: approval.expiresAt });
   } catch (error) {
+    if (error instanceof WriteApprovalArgumentsError) {
+      res.status(400).json({ error: "invalid_write_approval_request", request_id: res.locals.requestId });
+      return;
+    }
     next(error);
   }
 }
@@ -291,8 +296,12 @@ export function createApp(
   secretHandoffStore: SecretHandoffStore,
   writeApprovalStore: WriteApprovalStore
 ): Express {
-  const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts });
-  const sdkSource = new SdkSource({ rootDirectory: config.sdkSourceDir, revision: config.sdkRevision });
+  const app = createMcpExpressApp({ host: config.host, allowedHosts: config.allowedHosts, jsonLimit: "8mb" });
+  const sdkSource = new SdkSource({
+    rootDirectory: config.sdkSourceDir,
+    revision: config.sdkRevision,
+    digest: config.sdkSourceDigest
+  });
   app.locals.config = config;
   app.locals.secretHandoffStore = secretHandoffStore;
   app.locals.writeApprovalStore = writeApprovalStore;

@@ -21,7 +21,11 @@ export function createMcpServer(
   secretHandoffStore: SecretHandoffStore,
   writeApprovalStore: WriteApprovalStore,
   requestSignal?: AbortSignal,
-  sdkSource = new SdkSource({ rootDirectory: config.sdkSourceDir, revision: config.sdkRevision })
+  sdkSource = new SdkSource({
+    rootDirectory: config.sdkSourceDir,
+    revision: config.sdkRevision,
+    digest: config.sdkSourceDigest
+  })
 ): McpServer {
   const server = new McpServer({
     name: "hoomi-mcp",

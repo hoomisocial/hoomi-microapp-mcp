@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 export const MAX_SOURCE_FILE_BYTES = 500_000;
@@ -30,6 +31,7 @@ const SDK_NAMESPACES = [
 export interface SdkSourceOptions {
   rootDirectory: string;
   revision?: string;
+  digest?: string;
 }
 
 export interface SdkSourceFile {
@@ -62,7 +64,8 @@ export class SdkSourceError extends Error {
       | "sdk_source_unavailable"
       | "sdk_source_path_invalid"
       | "sdk_source_file_unavailable"
-      | "sdk_search_limit_exceeded",
+      | "sdk_search_limit_exceeded"
+      | "sdk_source_integrity_mismatch",
     message: string
   ) {
     super(message);
@@ -72,8 +75,13 @@ export class SdkSourceError extends Error {
 
 interface SearchState {
   deadline: number;
-  files: string[];
+  files: SdkSourceEntry[];
   totalBytes: number;
+}
+
+interface SdkSourceEntry {
+  path: string;
+  absolutePath: string;
 }
 
 function isAllowedFile(filePath: string): boolean {
@@ -119,15 +127,21 @@ export function clipSdkText(text: string, limit = MAX_RESULT_CHARS): { text: str
 export class SdkSource {
   private readonly rootDirectory: string;
   private readonly revision?: string;
+  private readonly digest?: string;
   private root?: string;
+  private verifiedDigest?: string;
+  private manifest?: readonly SdkSourceEntry[];
+  private manifestPromise?: Promise<readonly SdkSourceEntry[]>;
 
   constructor(options: SdkSourceOptions) {
     this.rootDirectory = path.resolve(options.rootDirectory);
     this.revision = options.revision;
+    this.digest = options.digest?.toLowerCase();
   }
 
   async prepare(): Promise<void> {
     await this.ensureRoot();
+    await this.verifyDigest();
   }
 
   async isReady(): Promise<boolean> {
@@ -140,6 +154,7 @@ export class SdkSource {
   }
 
   async read(relativePath: string): Promise<SdkSourceFile> {
+    await this.prepare();
     const resolved = await this.safePath(relativePath);
     try {
       const content = await fs.readFile(resolved.realTarget, "utf8");
@@ -154,23 +169,28 @@ export class SdkSource {
   }
 
   async search(query: string, pathPrefix: string | undefined, maxResults = 30): Promise<SdkSearchMatch[]> {
+    await this.prepare();
     const needle = query.trim().toLowerCase();
     if (!needle) {
       throw new SdkSourceError("sdk_source_path_invalid", "Search query must not be empty");
     }
 
     const prefix = pathPrefix ? normalizeRelativePath(pathPrefix, true) : undefined;
-    const state: SearchState = { deadline: Date.now() + SEARCH_DEADLINE_MS, files: [], totalBytes: 0 };
-    await this.collectFiles(await this.ensureRoot(), "", state);
+    const manifest = await this.getManifest();
 
     const matches: SdkSearchMatch[] = [];
-    for (const file of state.files.sort()) {
+    const state: SearchState = { deadline: Date.now() + SEARCH_DEADLINE_MS, files: [], totalBytes: 0 };
+    for (const entry of manifest) {
       this.checkDeadline(state);
-      if (prefix && file !== prefix && !file.startsWith(`${prefix}/`)) continue;
+      if (prefix && entry.path !== prefix && !entry.path.startsWith(`${prefix}/`)) continue;
+
+      const realTarget = await this.resolveManifestTarget(entry);
+      if (!realTarget) continue;
 
       let content: string;
       try {
-        content = (await this.read(file)).content;
+        content = await fs.readFile(realTarget, "utf8");
+        if (Buffer.byteLength(content, "utf8") > MAX_SOURCE_FILE_BYTES) continue;
       } catch {
         continue;
       }
@@ -182,7 +202,7 @@ export class SdkSource {
         const start = Math.max(0, index - 1);
         const end = Math.min(lines.length, index + 2);
         matches.push({
-          path: file,
+          path: entry.path,
           line: index + 1,
           snippet: clip(lines.slice(start, end).join("\n"), 4_000).text
         });
@@ -209,8 +229,7 @@ export class SdkSource {
     const exportsValue = metadata.exports;
     const entrypoints =
       typeof exportsValue === "object" && exportsValue !== null ? Object.keys(exportsValue) : [];
-    const state: SearchState = { deadline: Date.now() + SEARCH_DEADLINE_MS, files: [], totalBytes: 0 };
-    await this.collectFiles(await this.ensureRoot(), "", state);
+    const manifest = await this.getManifest();
 
     return {
       revision: this.revision ?? null,
@@ -221,7 +240,7 @@ export class SdkSource {
         version: typeof metadata.version === "string" ? metadata.version : null,
         entrypoints
       },
-      fileCount: state.files.length,
+      fileCount: manifest.length,
       namespaces: SDK_NAMESPACES
     };
   }
@@ -236,6 +255,78 @@ export class SdkSource {
       return realRoot;
     } catch {
       throw new SdkSourceError("sdk_source_unavailable", "SDK documentation source is unavailable");
+    }
+  }
+
+  private async verifyDigest(): Promise<void> {
+    if (!this.digest || this.verifiedDigest === this.digest) {
+      return;
+    }
+
+    const manifest = await this.getManifest();
+    const hash = createHash("sha256");
+
+    try {
+      for (const entry of manifest) {
+        const realTarget = await this.resolveManifestTarget(entry);
+        if (!realTarget) {
+          throw new Error("SDK source entry is unavailable");
+        }
+        hash.update(entry.path, "utf8");
+        hash.update("\0", "utf8");
+        hash.update(await fs.readFile(realTarget));
+        hash.update("\0", "utf8");
+      }
+    } catch {
+      throw new SdkSourceError("sdk_source_unavailable", "SDK documentation source is unavailable");
+    }
+
+    if (hash.digest("hex") !== this.digest) {
+      throw new SdkSourceError("sdk_source_integrity_mismatch", "SDK documentation source failed integrity verification");
+    }
+
+    this.verifiedDigest = this.digest;
+  }
+
+  private async getManifest(): Promise<readonly SdkSourceEntry[]> {
+    const root = await this.ensureRoot();
+    if (!this.digest) {
+      return this.buildManifest(root);
+    }
+
+    if (this.manifest) return this.manifest;
+    if (!this.manifestPromise) {
+      this.manifestPromise = this.buildManifest(root).then((manifest) => {
+        this.manifest = manifest;
+        return manifest;
+      });
+    }
+
+    try {
+      return await this.manifestPromise;
+    } catch (error) {
+      this.manifestPromise = undefined;
+      throw error;
+    }
+  }
+
+  private async buildManifest(root: string): Promise<readonly SdkSourceEntry[]> {
+    const state: SearchState = { deadline: Date.now() + SEARCH_DEADLINE_MS, files: [], totalBytes: 0 };
+    await this.collectFiles(root, "", state);
+    return state.files.sort((first, second) => (first.path < second.path ? -1 : first.path > second.path ? 1 : 0));
+  }
+
+  private async resolveManifestTarget(entry: SdkSourceEntry): Promise<string | null> {
+    const root = await this.ensureRoot();
+    try {
+      const realTarget = await fs.realpath(entry.absolutePath);
+      const relativeTarget = path.relative(root, realTarget);
+      if (relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
+        return null;
+      }
+      return realTarget;
+    } catch {
+      return null;
     }
   }
 
@@ -256,10 +347,11 @@ export class SdkSource {
       if (relativeTarget.startsWith("..") || path.isAbsolute(relativeTarget)) {
         throw new SdkSourceError("sdk_source_path_invalid", "Symlinked source paths are not readable");
       }
-      if (!(await fs.stat(realTarget)).isFile()) {
+      const targetStats = await fs.stat(realTarget);
+      if (!targetStats.isFile()) {
         throw new SdkSourceError("sdk_source_file_unavailable", "SDK source path is not a file");
       }
-      if ((await fs.stat(realTarget)).size > MAX_SOURCE_FILE_BYTES) {
+      if (targetStats.size > MAX_SOURCE_FILE_BYTES) {
         throw new SdkSourceError("sdk_source_file_unavailable", "SDK source file exceeds the size limit");
       }
       return { normalized, realTarget };
@@ -300,7 +392,10 @@ export class SdkSource {
           throw new SdkSourceError("sdk_search_limit_exceeded", "SDK search source limits were exceeded");
         }
         state.totalBytes += size;
-        state.files.push(relative.replaceAll("\\", "/"));
+        state.files.push({
+          path: relative.replaceAll("\\", "/"),
+          absolutePath: target
+        });
       } catch (error) {
         if (error instanceof SdkSourceError) throw error;
       }
