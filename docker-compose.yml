@@ -20,13 +20,18 @@ services:
     env_file:
       - .env
     environment:
-      NODE_ENV: production
+      # production by default; the Hoomi workspace Makefile runs it as development.
+      NODE_ENV: ${MCP_NODE_ENV:-production}
       HOST: 0.0.0.0
       PORT: 8300
-      MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS},127.0.0.1,localhost"
+      # hoomi-mcp: the name the builder and its sandboxes use on the shared network.
+      MCP_ALLOWED_HOSTS: "${MCP_ALLOWED_HOSTS:-localhost},127.0.0.1,hoomi-mcp"
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - default
+      - hoomi
     ports:
       - "127.0.0.1:8300:8300"
     read_only: true
@@ -43,7 +48,7 @@ services:
         - node
         - -e
         - "fetch('http://127.0.0.1:8300/readyz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-      interval: 30s
+      interval: 10s
       timeout: 3s
       retries: 3
       start_period: 10s
@@ -54,3 +59,7 @@ services:
 
 volumes:
   redis-data:
+
+networks:
+  hoomi:
+    name: hoomi

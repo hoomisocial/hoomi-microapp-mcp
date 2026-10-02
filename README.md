@@ -23,9 +23,7 @@ Hoomi tools and the write-approval and secret-handoff endpoints use the existing
 Authorization: Bearer <session_token>
 ```
 
-The server verifies the HMAC signature, exact `HS256` algorithm, `HOOMI-API` issuer, numeric subject, expiration, and configured audience. Production also requires `HOOMI_JWT_AUDIENCE`; `HOOMI_JWT_SECRET` must be supplied through a secret manager or runtime environment and must never be committed.
-
-The current Hoomi JWT predates a dedicated MCP audience/resource claim. Development and test configurations may omit the audience for internal wiring tests, but production fails closed without one. A public remote MCP deployment must still add a separate audience-bound OAuth token exchange before it is enabled for external clients.
+The MCP service sends the incoming bearer to the configured Hoomi API over HTTPS and verifies it through the authenticated `/v2/profile` endpoint. The API validates its own signature and expiry; MCP uses the returned profile ID to scope write approvals and one-time secret handoffs. The signing key is not copied into MCP configuration. The same validated bearer is forwarded only to allowlisted `/v2/` API routes.
 
 Write clients must first `POST /v1/write-approvals` with the tool name and exact JSON arguments after human approval. The returned receipt is short-lived, scoped to the authenticated user and argument hash, and consumed once when the write tool runs. The endpoint is not an independent proof of human approval and is not a replacement for Hoomi API authorization.
 
@@ -99,7 +97,7 @@ Client configuration field names vary, but the important values are `Streamable 
 
 4. The SDK-only local mode exposes these read-only tools without authentication: `hoomi_sdk_status`, `hoomi_sdk_search`, `hoomi_sdk_get_source`, `hoomi_sdk_get_api`, `hoomi_sdk_get_guidance`, and `hoomi_sdk_get_example`.
 
-5. To expose authenticated Hoomi tools locally, use `MCP_AUTH_MODE=hoomi-session`, provide `HOOMI_JWT_SECRET`, and configure the MCP client to send the Hoomi session token:
+5. To expose authenticated Hoomi tools locally, use `MCP_AUTH_MODE=hoomi-session`, configure `HOOMI_API_BASE_URL`, and configure the MCP client to send the Hoomi session token. MCP verifies it through the API; no signing secret is needed in this service:
 
 ```json
 {
@@ -114,15 +112,15 @@ Client configuration field names vary, but the important values are `Streamable 
 }
 ```
 
-In local development, remove `HOOMI_JWT_AUDIENCE` unless the session JWT contains the configured audience. Hoomi write tools additionally require a fresh receipt from `POST http://localhost:8300/v1/write-approvals` for the exact arguments.
+Hoomi write tools additionally require a fresh receipt from `POST http://localhost:8300/v1/write-approvals` for the exact arguments.
 
 ## Docker
 
-The service listens on port `8300` and the compose file binds it to host loopback only. Put a TLS reverse proxy or edge in front of it before any network exposure. Production requires an explicit `HOOMI_API_BASE_URL` using HTTPS, Redis-backed handoffs/approvals, both encryption/JWT secrets from a secret manager, a production JWT audience, a matching `HOOMI_SDK_SOURCE_DIGEST`, and a public-safe SDK snapshot mounted at `/opt/hoomi-sdk-source` or another `HOOMI_SDK_SOURCE_DIR`.
+The service listens on port `8300` and the compose file binds it to host loopback only. Put a TLS reverse proxy or edge in front of it before any network exposure. Production requires an explicit `HOOMI_API_BASE_URL` using HTTPS, Redis-backed handoffs/approvals, a secret handoff encryption key from a secret manager, a matching `HOOMI_SDK_SOURCE_DIGEST`, and a public-safe SDK snapshot mounted at `/opt/hoomi-sdk-source` or another `HOOMI_SDK_SOURCE_DIR`.
 
 ```powershell
 Copy-Item .env.example .env
-# Fill HOOMI_JWT_SECRET with the runtime secret.
+# Fill Redis and secret-handoff settings with runtime secrets.
 docker compose up --build
 ```
 

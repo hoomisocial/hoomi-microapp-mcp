@@ -212,7 +212,7 @@ export function registerMicroAppTools(
         "Create a Hoomi micro-app in a partner workspace. The generated app secret is never returned in the MCP result; use the one-time UI handoff reference instead. The MCP host must obtain a fresh approval receipt after showing the exact arguments to a human.",
       inputSchema: z.object({
         entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
-        app_type: z.string().trim().min(1).max(50),
+        app_type: z.string().trim().pipe(z.enum(["HTML5", "NATIVE"])).describe("Use HTML5 for browser React/Vite micro-apps. NATIVE is for native apps. Never use web or microapp."),
         app_name: z.string().trim().min(1).max(160),
         app_bundle: z.string().trim().regex(/^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+$/),
         app_default_language: z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/),
@@ -327,7 +327,7 @@ export function registerMicroAppTools(
         .object({
           entity_id: z.number().int().positive().describe("Hoomi partner workspace ID."),
           app_id: z.number().int().positive().describe("Hoomi micro-app ID."),
-          app_type: z.string().trim().min(1).max(50),
+          app_type: z.string().trim().pipe(z.enum(["HTML5", "NATIVE"])).describe("Use HTML5 for browser React/Vite micro-apps; preserve the existing type when updating."),
           app_bundle: z.string().trim().regex(/^[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)+$/),
           app_default_language: z.string().trim().regex(/^[a-z]{2}-[a-z]{2}$/),
           app_category_id: z.number().int().positive(),

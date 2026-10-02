@@ -10,9 +10,6 @@ const envSchema = z.object({
     .regex(/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/)
     .default("/mcp"),
   MCP_AUTH_MODE: z.enum(["hoomi-session", "disabled"]).default("hoomi-session"),
-  HOOMI_JWT_SECRET: z.string().min(32).optional(),
-  HOOMI_JWT_ISSUER: z.string().trim().min(1).default("HOOMI-API"),
-  HOOMI_JWT_AUDIENCE: z.string().trim().min(1).optional(),
   HOOMI_API_BASE_URL: z.string().url().optional(),
   HOOMI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
   HOOMI_MAX_RESPONSE_BYTES: z.coerce.number().int().min(1_024).max(10_000_000).default(2_000_000),
@@ -48,9 +45,6 @@ export interface AppConfig {
   port: number;
   mcpPath: string;
   authMode: AuthMode;
-  hoomiJwtSecret?: string;
-  hoomiJwtIssuer: string;
-  hoomiJwtAudience?: string;
   hoomiApiBaseUrl: string;
   hoomiRequestTimeoutMs: number;
   hoomiMaxResponseBytes: number;
@@ -67,6 +61,8 @@ export interface AppConfig {
   writeApprovalPath: string;
   allowedHosts: string[];
   allowedOrigins: string[];
+  /** Injectable API transport for isolated authentication tests. */
+  authFetchImpl?: typeof fetch;
 }
 
 function splitCsv(value: string): string[] {
@@ -107,14 +103,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   if (allowedHosts.length === 0) {
     throw new Error("MCP_ALLOWED_HOSTS must contain at least one hostname");
-  }
-
-  if (parsed.MCP_AUTH_MODE === "hoomi-session" && !parsed.HOOMI_JWT_SECRET) {
-    throw new Error("HOOMI_JWT_SECRET is required when MCP_AUTH_MODE=hoomi-session");
-  }
-
-  if (parsed.NODE_ENV === "production" && !parsed.HOOMI_JWT_AUDIENCE) {
-    throw new Error("HOOMI_JWT_AUDIENCE is required in production");
   }
 
   if (parsed.NODE_ENV === "production" && !parsed.HOOMI_SDK_SOURCE_DIGEST) {
@@ -172,9 +160,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsed.PORT,
     mcpPath: parsed.MCP_PATH,
     authMode: parsed.MCP_AUTH_MODE,
-    hoomiJwtSecret: parsed.HOOMI_JWT_SECRET,
-    hoomiJwtIssuer: parsed.HOOMI_JWT_ISSUER,
-    hoomiJwtAudience: parsed.HOOMI_JWT_AUDIENCE,
     hoomiApiBaseUrl: upstreamUrl.origin + upstreamUrl.pathname.replace(/\/$/, ""),
     hoomiRequestTimeoutMs: parsed.HOOMI_REQUEST_TIMEOUT_MS,
     hoomiMaxResponseBytes: parsed.HOOMI_MAX_RESPONSE_BYTES,

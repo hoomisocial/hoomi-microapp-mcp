@@ -3,23 +3,17 @@ import { createServer, type Server } from "node:http";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { SignJWT } from "jose";
-
 import { createApp } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 import { MemorySecretHandoffStore } from "../src/secrets/handoff.js";
 import { MemoryWriteApprovalStore } from "../src/secrets/write-approval.js";
 
-const secret = "a-secure-test-secret-that-is-long-enough";
 const config: AppConfig = {
   nodeEnv: "test",
   host: "127.0.0.1",
   port: 8300,
   mcpPath: "/mcp",
   authMode: "hoomi-session",
-  hoomiJwtSecret: secret,
-  hoomiJwtIssuer: "HOOMI-API",
-  hoomiJwtAudience: undefined,
   hoomiApiBaseUrl: "https://apidev.hoomi.social",
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
@@ -33,18 +27,16 @@ const config: AppConfig = {
   secretHandoffPath: "/v1/secret-handoffs",
   writeApprovalPath: "/v1/write-approvals",
   allowedHosts: ["127.0.0.1"],
-  allowedOrigins: []
+  allowedOrigins: [],
+  authFetchImpl: async () => new Response(JSON.stringify({ success: true, data: { id: 42 } }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  })
 };
 const approvalStore = new MemoryWriteApprovalStore();
 
 async function createToken(): Promise<string> {
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer("HOOMI-API")
-    .setSubject("42")
-    .setIssuedAt()
-    .setExpirationTime("5 minutes")
-    .sign(new TextEncoder().encode(secret));
+  return "test-browser-session-token";
 }
 
 async function createWriteApproval(
@@ -414,6 +406,31 @@ test("executes all micro-app master-data tools", async () => {
   } finally {
     await close(server);
     await close(upstream);
+    await store.close();
+  }
+});
+
+test("accepts OpenHands action annotations but still rejects unknown tool arguments", async () => {
+  const store = new MemorySecretHandoffStore();
+  const server = await listen(createApp(config, store, approvalStore));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    const headers = { authorization: `Bearer ${await createToken()}`, "content-type": "application/json" };
+    const args = { entity_id: 4, app_id: 42, security_risk: "HIGH", summary: "Delete app" };
+    const accepted = await fetch(`${baseUrl}/v1/write-approvals`, {
+      method: "POST", headers,
+      body: JSON.stringify({ tool: "hoomi_delete_micro_app", arguments: args })
+    });
+    assert.equal(accepted.status, 201);
+    const rejected = await fetch(`${baseUrl}/v1/write-approvals`, {
+      method: "POST", headers,
+      body: JSON.stringify({ tool: "hoomi_delete_micro_app", arguments: { ...args, arbitrary_field: true } })
+    });
+    assert.equal(rejected.status, 400);
+  } finally {
+    await close(server);
     await store.close();
   }
 });

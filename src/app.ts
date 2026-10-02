@@ -10,6 +10,7 @@ import {
   authenticateOptionalRequest,
   authenticateRequest,
   AuthenticationError,
+  AuthenticationUnavailableError,
   type AuthenticatedPrincipal
 } from "./auth.js";
 import type { AppConfig } from "./config.js";
@@ -99,12 +100,16 @@ function originPolicy(config: AppConfig) {
 function authenticationMiddleware(config: AppConfig) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      res.locals.auth = await authenticateRequest(req.get("authorization"), config);
+      res.locals.auth = await authenticateRequest(req.get("authorization"), config, config.authFetchImpl);
       next();
     } catch (error) {
       if (error instanceof AuthenticationError) {
         res.setHeader("WWW-Authenticate", 'Bearer realm="hoomi-mcp", error="invalid_token"');
         res.status(401).json({ error: error.code, request_id: res.locals.requestId });
+        return;
+      }
+      if (error instanceof AuthenticationUnavailableError) {
+        res.status(503).json({ error: error.code, request_id: res.locals.requestId });
         return;
       }
 
@@ -116,12 +121,16 @@ function authenticationMiddleware(config: AppConfig) {
 function optionalAuthenticationMiddleware(config: AppConfig) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      res.locals.auth = await authenticateOptionalRequest(req.get("authorization"), config);
+      res.locals.auth = await authenticateOptionalRequest(req.get("authorization"), config, config.authFetchImpl);
       next();
     } catch (error) {
       if (error instanceof AuthenticationError) {
         res.setHeader("WWW-Authenticate", 'Bearer realm="hoomi-mcp", error="invalid_token"');
         res.status(401).json({ error: error.code, request_id: res.locals.requestId });
+        return;
+      }
+      if (error instanceof AuthenticationUnavailableError) {
+        res.status(503).json({ error: error.code, request_id: res.locals.requestId });
         return;
       }
 
@@ -195,17 +204,22 @@ async function createWriteApproval(
   }
 
   const parsed = writeApprovalRequestSchema.safeParse(req.body);
+  // OpenHands adds these top-level action annotations to dynamic MCP calls.
+  // They are not tool inputs and must not participate in the receipt hash.
+  const toolArguments = parsed.success ? { ...parsed.data.arguments } : {};
+  delete toolArguments.security_risk;
+  delete toolArguments.summary;
   if (
     !parsed.success ||
     Object.hasOwn(parsed.data.arguments, "approval_reference") ||
-    !hasOnlyWriteToolArguments(parsed.data.tool, parsed.data.arguments)
+    !hasOnlyWriteToolArguments(parsed.data.tool, toolArguments)
   ) {
     res.status(400).json({ error: "invalid_write_approval_request", request_id: res.locals.requestId });
     return;
   }
 
   try {
-    const normalizedArguments = normalizeWriteApprovalArguments(parsed.data.tool, parsed.data.arguments);
+    const normalizedArguments = normalizeWriteApprovalArguments(parsed.data.tool, toolArguments);
     const approval = await store.create(
       principal.userId,
       parsed.data.tool,

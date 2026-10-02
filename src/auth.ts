@@ -1,6 +1,6 @@
-import { jwtVerify } from "jose";
-
 import type { AppConfig } from "./config.js";
+import { AccountSdk } from "./sdk/hoomi/account.js";
+import { HoomiApiClient, HoomiApiError } from "./sdk/hoomi/client.js";
 
 export interface AuthenticatedPrincipal {
   userId: number | null;
@@ -16,6 +16,15 @@ export class AuthenticationError extends Error {
   constructor() {
     super("invalid or expired authorization token");
     this.name = "AuthenticationError";
+  }
+}
+
+export class AuthenticationUnavailableError extends Error {
+  readonly code = "auth_service_unavailable";
+
+  constructor() {
+    super("Hoomi could not verify the current session");
+    this.name = "AuthenticationUnavailableError";
   }
 }
 
@@ -43,18 +52,20 @@ export function anonymousPrincipal(): AuthenticatedPrincipal {
 
 export async function authenticateOptionalRequest(
   authorizationHeader: string | undefined,
-  config: AppConfig
+  config: AppConfig,
+  fetchImpl: typeof fetch = fetch
 ): Promise<AuthenticatedPrincipal> {
   if (!authorizationHeader) {
     return anonymousPrincipal();
   }
 
-  return authenticateRequest(authorizationHeader, config);
+  return authenticateRequest(authorizationHeader, config, fetchImpl);
 }
 
 export async function authenticateRequest(
   authorizationHeader: string | undefined,
-  config: AppConfig
+  config: AppConfig,
+  fetchImpl: typeof fetch = fetch
 ): Promise<AuthenticatedPrincipal> {
   if (config.authMode === "disabled") {
     return {
@@ -65,33 +76,29 @@ export async function authenticateRequest(
     };
   }
 
-  if (!config.hoomiJwtSecret) {
-    throw new Error("Hoomi JWT verification is not configured");
-  }
-
   const token = extractBearerToken(authorizationHeader);
+  const client = new HoomiApiClient({
+    baseUrl: config.hoomiApiBaseUrl,
+    sessionToken: token,
+    timeoutMs: config.hoomiRequestTimeoutMs,
+    maxResponseBytes: config.hoomiMaxResponseBytes,
+    fetchImpl
+  });
 
   try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(config.hoomiJwtSecret), {
-      algorithms: ["HS256"],
-      issuer: config.hoomiJwtIssuer,
-      ...(config.hoomiJwtAudience ? { audience: config.hoomiJwtAudience } : {}),
-      clockTolerance: 5
-    });
-
-    if (typeof payload.sub !== "string" || !/^\d+$/.test(payload.sub)) {
-      throw new AuthenticationError();
-    }
-
-    const userId = Number(payload.sub);
-    if (!Number.isSafeInteger(userId) || userId <= 0 || typeof payload.exp !== "number") {
+    // Let the API that issued the session validate its signature and expiry.
+    // MCP receives only the user's bearer token, never the API signing key.
+    // The profile ID returned by the authenticated API scopes approvals and
+    // one-time secret handoffs to the verified user.
+    const profile = await new AccountSdk(client).getProfile();
+    if (!Number.isSafeInteger(profile.id) || (profile.id ?? 0) <= 0) {
       throw new AuthenticationError();
     }
 
     return {
-      userId,
-      issuer: config.hoomiJwtIssuer,
-      expiresAt: new Date(payload.exp * 1000),
+      userId: profile.id ?? null,
+      issuer: null,
+      expiresAt: null,
       sessionToken: token,
       mode: "hoomi-session"
     };
@@ -100,7 +107,13 @@ export async function authenticateRequest(
       throw error;
     }
 
-    // Keep JWT library details out of the response and logs.
-    throw new AuthenticationError();
+    if (error instanceof HoomiApiError) {
+      if (error.status === 401 || error.status === 403 || error.status === 404) {
+        throw new AuthenticationError();
+      }
+    }
+
+    // Keep upstream details and bearer tokens out of the response and logs.
+    throw new AuthenticationUnavailableError();
   }
 }

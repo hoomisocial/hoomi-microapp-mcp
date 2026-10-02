@@ -1,21 +1,19 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { SignJWT } from "jose";
-
-import { authenticateRequest, AuthenticationError } from "../src/auth.js";
+import {
+  authenticateRequest,
+  AuthenticationError,
+  AuthenticationUnavailableError
+} from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 
-const secret = "a-secure-test-secret-that-is-long-enough";
 const config: AppConfig = {
   nodeEnv: "test",
   host: "127.0.0.1",
   port: 8300,
   mcpPath: "/mcp",
   authMode: "hoomi-session",
-  hoomiJwtSecret: secret,
-  hoomiJwtIssuer: "HOOMI-API",
-  hoomiJwtAudience: undefined,
   hoomiApiBaseUrl: "https://apidev.hoomi.social",
   hoomiRequestTimeoutMs: 10_000,
   hoomiMaxResponseBytes: 2_000_000,
@@ -32,16 +30,16 @@ const config: AppConfig = {
   allowedOrigins: []
 };
 
-test("accepts a valid Hoomi session JWT", async () => {
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer("HOOMI-API")
-    .setSubject("42")
-    .setIssuedAt()
-    .setExpirationTime("5 minutes")
-    .sign(new TextEncoder().encode(secret));
-
-  const principal = await authenticateRequest(`Bearer ${token}`, config);
+test("validates the incoming bearer with Hoomi and binds its verified profile", async () => {
+  const token = "browser-session-token";
+  const principal = await authenticateRequest(`Bearer ${token}`, config, async (input, init) => {
+    assert.equal(String(input), "https://apidev.hoomi.social/v2/profile");
+    assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${token}`);
+    return new Response(JSON.stringify({ success: true, data: { id: 42 } }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  });
 
   assert.equal(principal.userId, 42);
   assert.equal(principal.mode, "hoomi-session");
@@ -55,32 +53,32 @@ test("rejects a missing authorization header", async () => {
   );
 });
 
-test("rejects a token with the wrong issuer", async () => {
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer("not-hoomi")
-    .setSubject("42")
-    .setExpirationTime("5 minutes")
-    .sign(new TextEncoder().encode(secret));
-
+test("rejects a token that Hoomi does not accept", async () => {
   await assert.rejects(
-    () => authenticateRequest(`Bearer ${token}`, config),
+    () => authenticateRequest("Bearer invalid-token", config, async () =>
+      new Response(JSON.stringify({ success: false }), { status: 401 })
+    ),
     (error: unknown) => error instanceof AuthenticationError
   );
 });
 
-test("enforces the configured JWT audience when present", async () => {
-  const audienceConfig = { ...config, hoomiJwtAudience: "hoomi-mcp" };
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuer("HOOMI-API")
-    .setAudience("another-service")
-    .setSubject("42")
-    .setExpirationTime("5 minutes")
-    .sign(new TextEncoder().encode(secret));
-
+test("rejects an upstream profile without a valid user ID", async () => {
   await assert.rejects(
-    () => authenticateRequest(`Bearer ${token}`, audienceConfig),
+    () => authenticateRequest("Bearer invalid-profile", config, async () =>
+      new Response(JSON.stringify({ success: true, data: { id: "42" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    ),
     (error: unknown) => error instanceof AuthenticationError
+  );
+});
+
+test("fails closed when Hoomi cannot be reached", async () => {
+  await assert.rejects(
+    () => authenticateRequest("Bearer session-token", config, async () => {
+      throw new TypeError("network unavailable");
+    }),
+    (error: unknown) => error instanceof AuthenticationUnavailableError
   );
 });
