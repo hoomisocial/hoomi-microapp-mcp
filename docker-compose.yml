@@ -17,6 +17,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Pin to a commit in production; HOOMI_SDK_SOURCE_DIGEST in .env must match it.
+        HOOMI_SDK_REF: ${HOOMI_SDK_REF:-master}
     env_file:
       - .env
     environment:
