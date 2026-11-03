@@ -23,7 +23,7 @@ env_var = $(shell grep -m1 '^$(1)=' "$(ROOT)/.env" 2>/dev/null | cut -d= -f2- | 
 export HOOMI_SDK_REF ?= $(or $(call env_var,HOOMI_SDK_REVISION),master)
 SDK_REPOSITORY ?= https://github.com/hoomisocial/hoomi-microapps-sdk-js.git
 
-.PHONY: help prod-up prod-down prod-restart prod-logs prod-ps prod-build sdk-pin sdk-digest check-prod install test typecheck build up down restart logs ps check-docker check-env check-workspace
+.PHONY: help update prod-up prod-down prod-restart prod-logs prod-ps prod-build sdk-pin sdk-digest check-prod install test typecheck build up down restart logs ps check-docker check-env check-workspace
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  make %-13s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -31,6 +31,19 @@ help: ## Show available commands
 prod-up: check-docker check-env check-prod ## Server: build and start MCP and Redis in production mode
 	@MCP_NODE_ENV=production $(COMPOSE_PROD) up -d --build --wait hoomi-mcp
 	@echo "Hoomi MCP: http://127.0.0.1:8300 and hoomi-mcp:8300 on the hoomi network (production, SDK $(HOOMI_SDK_REF))"
+# Fast-forward this checkout to its upstream branch, then redeploy only this
+# service: the other repositories' containers keep running. Refuses local
+# changes, since the image is built from the working tree.
+update: check-docker ## Server: git pull (fast-forward) and redeploy MCP only (Redis data stays)
+	@[ -z "$$(git -C "$(ROOT)" status --porcelain --untracked-files=no)" ] || { \
+	  echo "local changes in $(ROOT): commit or stash them first (git status)"; exit 1; }
+	@before="$$(git -C "$(ROOT)" rev-parse HEAD)"; git -C "$(ROOT)" pull --ff-only --quiet; \
+	after="$$(git -C "$(ROOT)" rev-parse HEAD)"; \
+	if [ "$$before" = "$$after" ]; then echo "already up to date: $$(git -C "$(ROOT)" log -1 --format='%h %s')"; \
+	else git -C "$(ROOT)" log --oneline "$$before..$$after"; \
+	  git -C "$(ROOT)" diff --quiet "$$before" "$$after" -- .env.example || echo "note: .env.example changed: compare with your env file(s) for new settings"; \
+	fi
+	@$(MAKE) --no-print-directory prod-up
 
 prod-down: check-docker ## Server: stop MCP and Redis (Redis data stays)
 	@$(COMPOSE_PROD) down
